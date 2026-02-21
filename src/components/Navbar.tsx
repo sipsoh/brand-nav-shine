@@ -203,7 +203,7 @@ const Navbar = () => {
             )}
             <Popover>
               <PopoverTrigger asChild>
-                <button className="hidden md:flex h-9 items-center gap-1.5 rounded-md bg-accent px-4 text-sm font-medium text-accent-foreground hover:bg-accent/90 transition-colors">
+                <button className="hidden md:flex items-center gap-1.5 rounded-md bg-[hsl(150,40%,25%)] px-4 py-2.5 text-sm font-medium text-white hover:bg-[hsl(150,40%,20%)] transition-colors">
                   <Zap className="h-4 w-4" />
                   Quick Actions
                 </button>
