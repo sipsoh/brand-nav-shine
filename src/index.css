@@ -15,7 +15,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: 160 20% 12%;
 
-    --primary: 152 45% 28%;
+    --primary: 200 12% 20%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 150 15% 92%;
@@ -32,7 +32,7 @@
 
     --border: 150 12% 88%;
     --input: 150 12% 88%;
-    --ring: 152 45% 28%;
+    --ring: 200 12% 20%;
 
     --radius: 0.5rem;
 
@@ -42,12 +42,12 @@
 
     --sidebar-background: 152 30% 97%;
     --sidebar-foreground: 160 20% 20%;
-    --sidebar-primary: 152 45% 28%;
+    --sidebar-primary: 200 12% 20%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 150 20% 92%;
     --sidebar-accent-foreground: 152 45% 22%;
     --sidebar-border: 150 12% 88%;
-    --sidebar-ring: 152 45% 28%;
+    --sidebar-ring: 200 12% 20%;
 
     --font-heading: 'Merriweather', serif;
     --font-body: 'Source Sans 3', sans-serif;
