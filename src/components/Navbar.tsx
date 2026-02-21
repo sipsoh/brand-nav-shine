@@ -7,10 +7,7 @@ type MegaItem = { title: string; description: string; icon: any; href: string; s
 
 const megaMenus: Record<string, MegaItem[]> = {
   Facilities: [
-    { title: "Property Listings", description: "Browse all managed properties", icon: Building2, href: "/facilities/properties" },
-    { title: "Maintenance Requests", description: "Submit and track work orders", icon: Wrench, href: "/facilities/maintenance" },
-    { title: "Reservations", description: "Book amenities and common areas", icon: BookOpen, href: "/facilities/reservations" },
-    { title: "Site Maps", description: "Interactive property layouts", icon: MapPin, href: "/facilities/maps" },
+    { title: "All Facilities", description: "Browse all managed properties", icon: Building2, href: "/facilities" },
   ],
   Departments: [
     {
