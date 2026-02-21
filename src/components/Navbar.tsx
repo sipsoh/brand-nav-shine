@@ -88,7 +88,7 @@ const Navbar = () => {
   };
 
   return (
-    <nav className="sticky top-0 z-50 bg-white text-foreground shadow-sm border-b border-border">
+    <nav className="sticky top-0 z-50 bg-[hsl(var(--evergreen-light))] text-foreground shadow-sm border-b border-border">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
