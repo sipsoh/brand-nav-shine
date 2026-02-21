@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Home, Building2, Users, Briefcase, Search, ChevronDown, ChevronRight, Menu, X, Bell, Wrench, BookOpen, MapPin, Shield, Heart, DollarSign, Laptop, FileText, GraduationCap, FolderOpen, Zap, ClipboardList, CalendarDays, HelpCircle, Settings } from "lucide-react";
+import { Home, Building2, Users, Briefcase, ChevronDown, Menu, X, Shield, Heart, DollarSign, Laptop, FileText, Zap, ClipboardList, CalendarDays, Settings } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import logo from "@/assets/logo.png";
 
@@ -62,7 +62,6 @@ const quickActions = [
 ];
 
 const Navbar = () => {
-  const [searchOpen, setSearchOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [activeMega, setActiveMega] = useState<string | null>(null);
   const megaTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -150,24 +149,6 @@ const Navbar = () => {
 
           {/* Right Actions */}
           <div className="flex items-center gap-2">
-            {searchOpen ? (
-              <div className="hidden md:flex items-center bg-muted rounded-md px-3 py-1.5">
-                <Search className="h-4 w-4 text-muted-foreground mr-2" />
-                <input
-                  autoFocus
-                  placeholder="Search this site..."
-                  className="bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none w-48"
-                  onBlur={() => setSearchOpen(false)}
-                />
-              </div>
-            ) : (
-              <button
-                onClick={() => setSearchOpen(true)}
-                className="hidden md:flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              >
-                <Search className="h-4 w-4" />
-              </button>
-            )}
             <Popover>
               <PopoverTrigger asChild>
                 <button className="hidden md:flex items-center gap-2 rounded-full bg-gradient-to-r from-[hsl(150,45%,28%)] to-[hsl(160,40%,22%)] px-5 py-2 text-sm font-semibold text-white shadow-md hover:shadow-lg hover:from-[hsl(150,45%,24%)] hover:to-[hsl(160,40%,18%)] transition-all duration-200">
@@ -189,13 +170,6 @@ const Navbar = () => {
                 ))}
               </PopoverContent>
             </Popover>
-            <button className="hidden md:flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors relative">
-              <Bell className="h-4 w-4" />
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-accent" />
-            </button>
-            <div className="hidden md:flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold">
-              JD
-            </div>
 
             <button
               className="md:hidden h-9 w-9 flex items-center justify-center rounded-md hover:bg-muted"
