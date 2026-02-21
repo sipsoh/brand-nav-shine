@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
-import { Home, Building2, Users, Briefcase, Search, ChevronDown, ChevronRight, Menu, X, Bell, Wrench, BookOpen, MapPin, Shield, Heart, DollarSign, Laptop, FileText, GraduationCap, FolderOpen } from "lucide-react";
+import { Home, Building2, Users, Briefcase, Search, ChevronDown, ChevronRight, Menu, X, Bell, Wrench, BookOpen, MapPin, Shield, Heart, DollarSign, Laptop, FileText, GraduationCap, FolderOpen, Zap, ClipboardList, CalendarDays, HelpCircle, Settings } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import logo from "@/assets/logo.png";
 
 type SubPage = { title: string; href: string };
@@ -49,6 +50,15 @@ const navItems = [
   { label: "Facilities", icon: Building2, href: "/facilities", hasMega: true },
   { label: "Company Directory", icon: Users, href: "/directory" },
   { label: "Departments", icon: Briefcase, href: "/departments", hasMega: true },
+];
+
+const quickActions = [
+  { label: "Submit Request", icon: ClipboardList, href: "/requests/new" },
+  { label: "Book a Room", icon: CalendarDays, href: "/facilities/reservations" },
+  { label: "IT Help Desk", icon: Laptop, href: "/departments/it/helpdesk" },
+  { label: "Company Directory", icon: Users, href: "/directory" },
+  { label: "HR Policies", icon: FileText, href: "/departments/hr/policies" },
+  { label: "Settings", icon: Settings, href: "/settings" },
 ];
 
 const Navbar = () => {
@@ -191,6 +201,27 @@ const Navbar = () => {
                 <Search className="h-4 w-4" />
               </button>
             )}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button className="hidden md:flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+                  <Zap className="h-4 w-4" />
+                  Quick Actions
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-56 p-2">
+                <p className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Quick Actions</p>
+                {quickActions.map((action) => (
+                  <a
+                    key={action.label}
+                    href={action.href}
+                    className="flex items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                  >
+                    <action.icon className="h-4 w-4 text-muted-foreground" />
+                    {action.label}
+                  </a>
+                ))}
+              </PopoverContent>
+            </Popover>
             <button className="hidden md:flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors relative">
               <Bell className="h-4 w-4" />
               <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-accent" />
