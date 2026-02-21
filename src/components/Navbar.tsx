@@ -132,13 +132,6 @@ const Navbar = () => {
                                 activeSubItem === sub.title ? "bg-muted" : "hover:bg-muted"
                               }`}
                             >
-                              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors ${
-                                activeSubItem === sub.title
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground"
-                              }`}>
-                                <sub.icon className="h-4 w-4" />
-                              </div>
                               <div className="flex-1 min-w-0">
                                 <span className="text-sm font-semibold text-foreground">{sub.title}</span>
                                 <p className="text-xs text-muted-foreground mt-0.5 truncate">{sub.description}</p>
