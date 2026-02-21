@@ -203,12 +203,12 @@ const Navbar = () => {
             )}
             <Popover>
               <PopoverTrigger asChild>
-                <button className="hidden md:flex items-center gap-1.5 rounded-md bg-[hsl(150,40%,25%)] px-4 py-2.5 text-sm font-medium text-white hover:bg-[hsl(150,40%,20%)] transition-colors">
+                <button className="hidden md:flex items-center gap-2 rounded-full bg-gradient-to-r from-[hsl(150,45%,28%)] to-[hsl(160,40%,22%)] px-5 py-2 text-sm font-semibold text-white shadow-md hover:shadow-lg hover:from-[hsl(150,45%,24%)] hover:to-[hsl(160,40%,18%)] transition-all duration-200">
                   <Zap className="h-4 w-4" />
                   Quick Actions
                 </button>
               </PopoverTrigger>
-              <PopoverContent align="end" className="w-56 p-2">
+              <PopoverContent align="end" sideOffset={8} className="w-56 p-2">
                 <p className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Quick Actions</p>
                 {quickActions.map((action) => (
                   <a
