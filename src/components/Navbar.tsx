@@ -1,8 +1,11 @@
 import { useState, useRef } from "react";
-import { Home, Building2, Users, Briefcase, Search, ChevronDown, Menu, X, Bell, FileText, Phone, MapPin, Shield, Heart, DollarSign, Wrench, Laptop, BookOpen } from "lucide-react";
+import { Home, Building2, Users, Briefcase, Search, ChevronDown, ChevronRight, Menu, X, Bell, Wrench, BookOpen, MapPin, Shield, Heart, DollarSign, Laptop, FileText, GraduationCap, FolderOpen } from "lucide-react";
 import logo from "@/assets/logo.png";
 
-const megaMenus: Record<string, { title: string; description: string; icon: any; href: string }[]> = {
+type SubPage = { title: string; href: string };
+type MegaItem = { title: string; description: string; icon: any; href: string; subPages?: SubPage[] };
+
+const megaMenus: Record<string, MegaItem[]> = {
   Facilities: [
     { title: "Property Listings", description: "Browse all managed properties", icon: Building2, href: "/facilities/properties" },
     { title: "Maintenance Requests", description: "Submit and track work orders", icon: Wrench, href: "/facilities/maintenance" },
@@ -10,10 +13,37 @@ const megaMenus: Record<string, { title: string; description: string; icon: any;
     { title: "Site Maps", description: "Interactive property layouts", icon: MapPin, href: "/facilities/maps" },
   ],
   Departments: [
-    { title: "Human Resources", description: "Benefits, policies & onboarding", icon: Heart, href: "/departments/hr" },
-    { title: "Finance", description: "Budgets, invoices & reporting", icon: DollarSign, href: "/departments/finance" },
-    { title: "IT Support", description: "Tech help & system access", icon: Laptop, href: "/departments/it" },
-    { title: "Compliance", description: "Regulations & safety standards", icon: Shield, href: "/departments/compliance" },
+    {
+      title: "Human Resources", description: "Benefits, policies & onboarding", icon: Heart, href: "/departments/hr",
+      subPages: [
+        { title: "Policies", href: "/departments/hr/policies" },
+        { title: "Documents", href: "/departments/hr/documents" },
+        { title: "Trainings", href: "/departments/hr/trainings" },
+      ],
+    },
+    {
+      title: "Finance", description: "Budgets, invoices & reporting", icon: DollarSign, href: "/departments/finance",
+      subPages: [
+        { title: "Invoices", href: "/departments/finance/invoices" },
+        { title: "Budgets", href: "/departments/finance/budgets" },
+        { title: "Reports", href: "/departments/finance/reports" },
+      ],
+    },
+    {
+      title: "IT Support", description: "Tech help & system access", icon: Laptop, href: "/departments/it",
+      subPages: [
+        { title: "Help Desk", href: "/departments/it/helpdesk" },
+        { title: "System Access", href: "/departments/it/access" },
+      ],
+    },
+    {
+      title: "Compliance", description: "Regulations & safety standards", icon: Shield, href: "/departments/compliance",
+      subPages: [
+        { title: "Regulations", href: "/departments/compliance/regulations" },
+        { title: "Safety Standards", href: "/departments/compliance/safety" },
+        { title: "Audit Reports", href: "/departments/compliance/audits" },
+      ],
+    },
   ],
 };
 
@@ -28,15 +58,26 @@ const Navbar = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [activeMega, setActiveMega] = useState<string | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [activeSubItem, setActiveSubItem] = useState<string | null>(null);
+  const megaTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const subTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleEnter = (label: string) => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  const enterMega = (label: string) => {
+    if (megaTimeout.current) clearTimeout(megaTimeout.current);
     setActiveMega(label);
   };
-
-  const handleLeave = () => {
-    timeoutRef.current = setTimeout(() => setActiveMega(null), 150);
+  const leaveMega = () => {
+    megaTimeout.current = setTimeout(() => {
+      setActiveMega(null);
+      setActiveSubItem(null);
+    }, 150);
+  };
+  const enterSub = (title: string) => {
+    if (subTimeout.current) clearTimeout(subTimeout.current);
+    setActiveSubItem(title);
+  };
+  const leaveSub = () => {
+    subTimeout.current = setTimeout(() => setActiveSubItem(null), 100);
   };
 
   return (
@@ -54,8 +95,8 @@ const Navbar = () => {
               <div
                 key={item.label}
                 className="relative"
-                onMouseEnter={() => item.hasMega && handleEnter(item.label)}
-                onMouseLeave={handleLeave}
+                onMouseEnter={() => item.hasMega && enterMega(item.label)}
+                onMouseLeave={leaveMega}
               >
                 <a
                   href={item.href}
@@ -63,32 +104,76 @@ const Navbar = () => {
                 >
                   <item.icon className="h-4 w-4" />
                   {item.label}
-                  {item.hasMega && <ChevronDown className={`h-3 w-3 transition-transform ${activeMega === item.label ? "rotate-180" : ""}`} />}
+                  {item.hasMega && (
+                    <ChevronDown className={`h-3 w-3 transition-transform ${activeMega === item.label ? "rotate-180" : ""}`} />
+                  )}
                 </a>
 
                 {/* Mega Menu */}
                 {item.hasMega && activeMega === item.label && (
                   <div
                     className="absolute left-1/2 -translate-x-1/2 top-full pt-2 z-50"
-                    onMouseEnter={() => handleEnter(item.label)}
-                    onMouseLeave={handleLeave}
+                    onMouseEnter={() => enterMega(item.label)}
+                    onMouseLeave={leaveMega}
                   >
-                    <div className="w-[480px] rounded-lg border border-border bg-card shadow-lg p-4 grid grid-cols-2 gap-2">
-                      {megaMenus[item.label]?.map((sub) => (
-                        <a
-                          key={sub.title}
-                          href={sub.href}
-                          className="flex items-start gap-3 rounded-md p-3 transition-colors hover:bg-muted group"
-                        >
-                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                            <sub.icon className="h-4 w-4" />
+                    <div className="relative flex w-[280px] rounded-lg border border-border bg-card shadow-lg">
+                      {/* Primary items */}
+                      <div className="w-full p-2 space-y-0.5">
+                        {megaMenus[item.label]?.map((sub) => (
+                          <div
+                            key={sub.title}
+                            className="relative"
+                            onMouseEnter={() => sub.subPages && enterSub(sub.title)}
+                            onMouseLeave={leaveSub}
+                          >
+                            <a
+                              href={sub.href}
+                              className={`flex items-center gap-3 rounded-md p-3 transition-colors group ${
+                                activeSubItem === sub.title ? "bg-muted" : "hover:bg-muted"
+                              }`}
+                            >
+                              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors ${
+                                activeSubItem === sub.title
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground"
+                              }`}>
+                                <sub.icon className="h-4 w-4" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <span className="text-sm font-semibold text-foreground">{sub.title}</span>
+                                <p className="text-xs text-muted-foreground mt-0.5 truncate">{sub.description}</p>
+                              </div>
+                              {sub.subPages && (
+                                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              )}
+                            </a>
+
+                            {/* Side panel */}
+                            {sub.subPages && activeSubItem === sub.title && (
+                              <div
+                                className="absolute left-full top-0 pl-1.5 z-50"
+                                onMouseEnter={() => enterSub(sub.title)}
+                                onMouseLeave={leaveSub}
+                              >
+                                <div className="w-48 rounded-lg border border-border bg-card shadow-lg p-2">
+                                  <p className="px-3 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                    {sub.title}
+                                  </p>
+                                  {sub.subPages.map((sp) => (
+                                    <a
+                                      key={sp.title}
+                                      href={sp.href}
+                                      className="block rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                                    >
+                                      {sp.title}
+                                    </a>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                          <div>
-                            <span className="text-sm font-semibold text-foreground">{sub.title}</span>
-                            <p className="text-xs text-muted-foreground mt-0.5">{sub.description}</p>
-                          </div>
-                        </a>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -124,7 +209,6 @@ const Navbar = () => {
               JD
             </div>
 
-            {/* Mobile toggle */}
             <button
               className="md:hidden h-9 w-9 flex items-center justify-center rounded-md hover:bg-muted"
               onClick={() => setMobileOpen(!mobileOpen)}
@@ -148,11 +232,22 @@ const Navbar = () => {
                 {item.label}
               </a>
               {item.hasMega && megaMenus[item.label] && (
-                <div className="ml-10 space-y-1">
+                <div className="ml-10 space-y-0.5">
                   {megaMenus[item.label].map((sub) => (
-                    <a key={sub.title} href={sub.href} className="block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
-                      {sub.title}
-                    </a>
+                    <div key={sub.title}>
+                      <a href={sub.href} className="block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground font-medium">
+                        {sub.title}
+                      </a>
+                      {sub.subPages && (
+                        <div className="ml-4 space-y-0.5">
+                          {sub.subPages.map((sp) => (
+                            <a key={sp.title} href={sp.href} className="block rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
+                              {sp.title}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}
