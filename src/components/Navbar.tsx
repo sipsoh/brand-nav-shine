@@ -65,9 +65,7 @@ const Navbar = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [activeMega, setActiveMega] = useState<string | null>(null);
-  const [activeSubItem, setActiveSubItem] = useState<string | null>(null);
   const megaTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const subTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const enterMega = (label: string) => {
     if (megaTimeout.current) clearTimeout(megaTimeout.current);
@@ -76,15 +74,7 @@ const Navbar = () => {
   const leaveMega = () => {
     megaTimeout.current = setTimeout(() => {
       setActiveMega(null);
-      setActiveSubItem(null);
     }, 150);
-  };
-  const enterSub = (title: string) => {
-    if (subTimeout.current) clearTimeout(subTimeout.current);
-    setActiveSubItem(title);
-  };
-  const leaveSub = () => {
-    subTimeout.current = setTimeout(() => setActiveSubItem(null), 100);
   };
 
   return (
@@ -116,63 +106,40 @@ const Navbar = () => {
                   )}
                 </a>
 
-                {/* Mega Menu */}
-                {item.hasMega && activeMega === item.label && (
+                {/* SharePoint-style Mega Menu */}
+                {item.hasMega && activeMega === item.label && megaMenus[item.label] && (
                   <div
-                    className="absolute left-1/2 -translate-x-1/2 top-full pt-2 z-50"
+                    className="fixed left-0 right-0 top-[64px] z-50"
                     onMouseEnter={() => enterMega(item.label)}
                     onMouseLeave={leaveMega}
                   >
-                    <div className="relative flex w-[280px] rounded-lg border border-border bg-card shadow-lg">
-                      {/* Primary items */}
-                      <div className="w-full p-2 space-y-0.5">
-                        {megaMenus[item.label]?.map((sub) => (
-                          <div
-                            key={sub.title}
-                            className="relative"
-                            onMouseEnter={() => sub.subPages && enterSub(sub.title)}
-                            onMouseLeave={leaveSub}
-                          >
-                            <a
-                              href={sub.href}
-                              className={`flex items-center gap-3 rounded-md p-3 transition-colors group ${
-                                activeSubItem === sub.title ? "bg-muted" : "hover:bg-muted"
-                              }`}
-                            >
-                              <div className="flex-1 min-w-0">
-                                <span className="text-sm font-semibold text-foreground">{sub.title}</span>
-                                <p className="text-xs text-muted-foreground mt-0.5 truncate">{sub.description}</p>
-                              </div>
-                              {sub.subPages && (
-                                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                              )}
-                            </a>
-
-                            {/* Side panel */}
-                            {sub.subPages && activeSubItem === sub.title && (
-                              <div
-                                className="absolute left-full top-0 pl-1.5 z-50"
-                                onMouseEnter={() => enterSub(sub.title)}
-                                onMouseLeave={leaveSub}
+                    <div className="border-t border-b border-border bg-card shadow-md">
+                      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
+                        <div className="grid grid-cols-4 divide-x divide-border">
+                          {megaMenus[item.label].map((sub) => (
+                            <div key={sub.title} className="px-6 first:pl-0 last:pr-0">
+                              <a
+                                href={sub.href}
+                                className="text-sm font-bold text-foreground hover:text-primary transition-colors"
                               >
-                                <div className="w-48 rounded-lg border border-border bg-card shadow-lg p-2">
-                                  <p className="px-3 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                    {sub.title}
-                                  </p>
+                                {sub.title}
+                              </a>
+                              {sub.subPages && (
+                                <div className="mt-2 space-y-1">
                                   {sub.subPages.map((sp) => (
                                     <a
                                       key={sp.title}
                                       href={sp.href}
-                                      className="block rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                                      className="block text-sm text-muted-foreground hover:text-foreground transition-colors py-0.5"
                                     >
                                       {sp.title}
                                     </a>
                                   ))}
                                 </div>
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
