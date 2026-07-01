@@ -51,6 +51,16 @@ class StorageService:
             ExpiresIn=PRESIGN_EXPIRY_SECONDS,
         )
 
+    def get_bytes(self, object_key: str) -> bytes:
+        response = self._client.get_object(Bucket=self._bucket, Key=object_key)
+        return response["Body"].read()
+
+    def put_bytes(self, object_key: str, data: bytes, content_type: str | None = None) -> None:
+        params: dict = {"Bucket": self._bucket, "Key": object_key, "Body": data}
+        if content_type:
+            params["ContentType"] = content_type
+        self._client.put_object(**params)
+
     def stat_object(self, object_key: str) -> ObjectStat | None:
         try:
             head = self._client.head_object(Bucket=self._bucket, Key=object_key)

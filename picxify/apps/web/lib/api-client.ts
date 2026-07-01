@@ -88,6 +88,80 @@ export function completeUpload(
   });
 }
 
+export interface DatasetFromFileResponse {
+  datasetId: string;
+  jobId: string;
+  status: string;
+}
+
+export function createDatasetFromFile(
+  token: string,
+  input: { workspaceId: string; fileId: string; name: string },
+): Promise<DatasetFromFileResponse> {
+  return apiFetch<DatasetFromFileResponse>("/datasets/from-file", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input),
+  });
+}
+
+export interface JobResponse {
+  jobId: string;
+  jobType: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  progress: number;
+  currentStep: string | null;
+  errorMessage: string | null;
+  output: Record<string, unknown>;
+}
+
+export function getJob(token: string, jobId: string): Promise<JobResponse> {
+  return apiFetch<JobResponse>(`/jobs/${jobId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export interface DatasetColumn {
+  id: string;
+  name: string;
+  normalizedName: string;
+  detectedType: string;
+  semanticType: string | null;
+  roleHint: string | null;
+  nullableRatio: number | null;
+  uniqueRatio: number | null;
+  stats: Record<string, unknown>;
+  examples: unknown[];
+  confidence: number | null;
+}
+
+export interface DatasetTable {
+  id: string;
+  name: string;
+  normalizedName: string;
+  rowCount: number;
+  columnCount: number;
+  sampleRows: Record<string, unknown>[];
+  columns: DatasetColumn[];
+}
+
+export interface DatasetResponse {
+  id: string;
+  name: string;
+  sourceType: string;
+  rowCount: number | null;
+  tableCount: number;
+  qualityScore: number | null;
+  tables: DatasetTable[];
+  findings: { severity: string; findingType: string; message: string }[];
+}
+
+export function getDataset(token: string, datasetId: string): Promise<DatasetResponse> {
+  return apiFetch<DatasetResponse>(`/datasets/${datasetId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 export async function putToPresignedUrl(uploadUrl: string, file: File): Promise<void> {
   const response = await fetch(uploadUrl, {
     method: "PUT",

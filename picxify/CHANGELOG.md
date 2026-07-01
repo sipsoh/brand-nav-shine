@@ -1,5 +1,28 @@
 # Changelog
 
+## Milestone 4 — Parsing and profiling (2026-07-01)
+
+- Parser: CSV/TSV/TXT via DuckDB auto-detection; Excel via openpyxl with one table per
+  non-empty sheet; friendly `ParseError`s for empty/undetectable files.
+- Normalization with an audit trail: blank row/column removal, duplicate column renaming,
+  footer/total row exclusion, currency/percent/number string coercion, multi-format date
+  parsing, whitespace trimming — every non-obvious transform becomes a data-quality finding.
+- Column profiler: detected type (integer/float/currency/percent/date/datetime/boolean/
+  category/text/id), role hints (measure/dimension/date/id/text), null/unique ratios,
+  per-type stats, examples, and confidence; JSON-safe sample rows; dataset quality score.
+- Parquet snapshots of normalized tables written to object storage per table.
+- Models + migration `0003`: `datasets`, `dataset_tables`, `dataset_columns`,
+  `data_quality_findings`, `generation_jobs`.
+- Endpoints: `POST /datasets/from-file`, `GET /jobs/{id}`, `GET /datasets/{id}`; Celery
+  `picxify.parse_dataset` task with inline fallback when no broker is reachable.
+- Web: upload now chains into dataset creation, polls the parse job with live step labels,
+  and lands on `/app/datasets/[id]` — the "what Picxify detected" profile view with type
+  chips, missing-value percentages, examples, and cleanup/quality notes.
+- Tests: 16 new pytest cases (50 total) — normalization units, pipeline runs against the
+  real sample CSV, a messy CSV (blank rows, footer totals, currency strings, mixed dates,
+  missing values), multi-sheet Excel, empty-file failure, and the full API flow with
+  isolation checks. Fixed a pandas 3.x `str`-dtype incompatibility found by these tests.
+
 ## Milestone 3 — Upload and storage (2026-07-01)
 
 - API: `uploaded_files` model + migration `0002`, with a `pending → uploaded` lifecycle and a

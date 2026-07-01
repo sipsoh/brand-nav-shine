@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   completeUpload,
+  createDatasetFromFile,
+  getJob,
   presignUpload,
   putToPresignedUrl,
   syncUser,
@@ -12,12 +14,36 @@ import {
 import { clerkEnabled } from "@/lib/auth";
 
 const ACCEPTED = ".csv,.tsv,.txt,.xlsx,.xls";
+const POLL_INTERVAL_MS = 1200;
+const POLL_TIMEOUT_MS = 120_000;
 
 type Phase =
   | { step: "idle" }
   | { step: "uploading"; label: string }
-  | { step: "done"; fileId: string; filename: string }
+  | { step: "done"; datasetId: string; filename: string }
   | { step: "error"; message: string };
+
+async function pollJobUntilDone(
+  getToken: () => Promise<string | null>,
+  jobId: string,
+  onStep: (label: string) => void,
+): Promise<void> {
+  const startedAt = Date.now();
+  for (;;) {
+    const token = await getToken();
+    if (!token) throw new Error("No session token.");
+    const job = await getJob(token, jobId);
+    if (job.status === "succeeded") return;
+    if (job.status === "failed" || job.status === "cancelled") {
+      throw new Error(job.errorMessage ?? "Processing failed. Please try again.");
+    }
+    onStep(job.currentStep ?? "Processing…");
+    if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+      throw new Error("Processing is taking longer than expected. Check back shortly.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+  }
+}
 
 export function UploadDropzone() {
   if (!clerkEnabled) {
@@ -81,7 +107,16 @@ function AuthedDropzone() {
         await putToPresignedUrl(presigned.uploadUrl, file);
         setPhase({ step: "uploading", label: "Confirming upload…" });
         const completed = await completeUpload(token, presigned.fileId);
-        setPhase({ step: "done", fileId: completed.fileId, filename: file.name });
+        setPhase({ step: "uploading", label: "Reading file…" });
+        const dataset = await createDatasetFromFile(token, {
+          workspaceId,
+          fileId: completed.fileId,
+          name: file.name.replace(/\.[^.]+$/, ""),
+        });
+        await pollJobUntilDone(getToken, dataset.jobId, (label) =>
+          setPhase({ step: "uploading", label }),
+        );
+        setPhase({ step: "done", datasetId: dataset.datasetId, filename: file.name });
       } catch (error) {
         const message =
           error instanceof Error && error.message
@@ -111,18 +146,23 @@ function AuthedDropzone() {
     return (
       <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center">
         <p className="font-medium text-green-900">
-          {phase.filename} uploaded successfully.
+          {phase.filename} was parsed and profiled successfully.
         </p>
-        <p className="mt-1 text-sm text-green-800">
-          Parsing and profiling arrive in Milestone 4 — your file is stored and ready.
-        </p>
-        <button
-          type="button"
-          onClick={() => setPhase({ step: "idle" })}
-          className="mt-4 rounded-lg border border-green-300 px-4 py-2 text-sm font-medium text-green-900 hover:bg-green-100"
-        >
-          Upload another file
-        </button>
+        <div className="mt-4 flex justify-center gap-3">
+          <Link
+            href={`/app/datasets/${phase.datasetId}`}
+            className="rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800"
+          >
+            See what Picxify detected
+          </Link>
+          <button
+            type="button"
+            onClick={() => setPhase({ step: "idle" })}
+            className="rounded-lg border border-green-300 px-4 py-2 text-sm font-medium text-green-900 hover:bg-green-100"
+          >
+            Upload another file
+          </button>
+        </div>
       </div>
     );
   }

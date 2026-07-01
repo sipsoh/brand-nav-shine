@@ -1,0 +1,228 @@
+import logging
+import uuid
+from collections.abc import Callable
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
+
+from app.auth import get_current_user
+from app.db import get_db
+from app.models.dataset import Dataset
+from app.models.job import GenerationJob, JobStatus
+from app.models.upload import FileStatus, UploadedFile
+from app.models.user import User
+from app.models.workspace import WorkspaceRole
+from app.services.permissions import require_membership
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/datasets", tags=["datasets"])
+
+EDITOR_ROLES = (
+    WorkspaceRole.OWNER.value,
+    WorkspaceRole.ADMIN.value,
+    WorkspaceRole.EDITOR.value,
+)
+
+ParseDispatcher = Callable[[uuid.UUID, uuid.UUID], None]
+
+
+def get_parse_dispatcher() -> ParseDispatcher:
+    """Enqueue parsing on Celery; fall back to inline execution when no broker
+    is reachable (keyless local dev). Tests override this dependency."""
+
+    def dispatch(dataset_id: uuid.UUID, job_id: uuid.UUID) -> None:
+        from app.workers.tasks import parse_dataset_job
+
+        try:
+            parse_dataset_job.delay(str(dataset_id), str(job_id))
+        except Exception:
+            logger.warning("Celery broker unavailable; parsing dataset %s inline.", dataset_id)
+            parse_dataset_job.run(str(dataset_id), str(job_id))
+
+    return dispatch
+
+
+class DatasetFromFileRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    workspace_id: uuid.UUID = Field(alias="workspaceId")
+    file_id: uuid.UUID = Field(alias="fileId")
+    name: str = Field(min_length=1, max_length=200)
+
+
+class DatasetFromFileResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    dataset_id: uuid.UUID = Field(alias="datasetId")
+    job_id: uuid.UUID = Field(alias="jobId")
+    status: str
+
+
+class ColumnResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: uuid.UUID
+    name: str
+    normalized_name: str = Field(alias="normalizedName")
+    detected_type: str = Field(alias="detectedType")
+    semantic_type: str | None = Field(alias="semanticType")
+    role_hint: str | None = Field(alias="roleHint")
+    nullable_ratio: float | None = Field(alias="nullableRatio")
+    unique_ratio: float | None = Field(alias="uniqueRatio")
+    stats: dict
+    examples: list
+    confidence: float | None
+
+
+class TableResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: uuid.UUID
+    name: str
+    normalized_name: str = Field(alias="normalizedName")
+    row_count: int = Field(alias="rowCount")
+    column_count: int = Field(alias="columnCount")
+    sample_rows: list = Field(alias="sampleRows")
+    columns: list[ColumnResponse]
+
+
+class FindingResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    severity: str
+    finding_type: str = Field(alias="findingType")
+    message: str
+
+
+class DatasetResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: uuid.UUID
+    name: str
+    source_type: str = Field(alias="sourceType")
+    row_count: int | None = Field(alias="rowCount")
+    table_count: int = Field(alias="tableCount")
+    quality_score: float | None = Field(alias="qualityScore")
+    tables: list[TableResponse]
+    findings: list[FindingResponse]
+
+
+@router.post("/from-file", response_model=DatasetFromFileResponse)
+def create_dataset_from_file(
+    body: DatasetFromFileRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    dispatch: ParseDispatcher = Depends(get_parse_dispatcher),
+) -> DatasetFromFileResponse:
+    require_membership(db, body.workspace_id, user, roles=EDITOR_ROLES)
+
+    uploaded_file = db.scalar(
+        select(UploadedFile).where(
+            UploadedFile.id == body.file_id, UploadedFile.workspace_id == body.workspace_id
+        )
+    )
+    if uploaded_file is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+    if uploaded_file.status not in {FileStatus.UPLOADED.value, FileStatus.PARSED.value}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This file has not finished uploading.",
+        )
+
+    dataset = Dataset(
+        workspace_id=body.workspace_id,
+        file_id=uploaded_file.id,
+        name=body.name,
+        source_type="file",
+        created_by=user.id,
+    )
+    db.add(dataset)
+    db.flush()
+
+    job = GenerationJob(
+        workspace_id=body.workspace_id,
+        user_id=user.id,
+        dataset_id=dataset.id,
+        job_type="parse_dataset",
+        status=JobStatus.QUEUED.value,
+        input={"fileId": str(uploaded_file.id)},
+    )
+    db.add(job)
+    db.commit()
+
+    dispatch(dataset.id, job.id)
+
+    return DatasetFromFileResponse(
+        dataset_id=dataset.id, job_id=job.id, status=JobStatus.QUEUED.value
+    )
+
+
+@router.get("/{dataset_id}", response_model=DatasetResponse)
+def get_dataset(
+    dataset_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DatasetResponse:
+    dataset = db.scalar(
+        select(Dataset)
+        .where(Dataset.id == dataset_id)
+        .options(selectinload(Dataset.tables), selectinload(Dataset.findings))
+    )
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found.")
+    require_membership(db, dataset.workspace_id, user)
+
+    return DatasetResponse(
+        id=dataset.id,
+        name=dataset.name,
+        source_type=dataset.source_type,
+        row_count=dataset.row_count,
+        table_count=dataset.table_count,
+        quality_score=float(dataset.quality_score) if dataset.quality_score is not None else None,
+        tables=[
+            TableResponse(
+                id=table.id,
+                name=table.name,
+                normalized_name=table.normalized_name,
+                row_count=table.row_count,
+                column_count=table.column_count,
+                sample_rows=table.sample_rows,
+                columns=[
+                    ColumnResponse(
+                        id=column.id,
+                        name=column.name,
+                        normalized_name=column.normalized_name,
+                        detected_type=column.detected_type,
+                        semantic_type=column.semantic_type,
+                        role_hint=column.role_hint,
+                        nullable_ratio=(
+                            float(column.nullable_ratio)
+                            if column.nullable_ratio is not None
+                            else None
+                        ),
+                        unique_ratio=(
+                            float(column.unique_ratio) if column.unique_ratio is not None else None
+                        ),
+                        stats=column.stats,
+                        examples=column.examples,
+                        confidence=(
+                            float(column.confidence) if column.confidence is not None else None
+                        ),
+                    )
+                    for column in table.columns
+                ],
+            )
+            for table in dataset.tables
+        ],
+        findings=[
+            FindingResponse(
+                severity=finding.severity,
+                finding_type=finding.finding_type,
+                message=finding.message,
+            )
+            for finding in dataset.findings
+        ],
+    )

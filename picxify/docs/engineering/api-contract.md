@@ -27,6 +27,14 @@ All endpoints below require a Clerk-issued bearer JWT (verified against `CLERK_J
 | `POST /uploads/presign` | Validates membership (editor+), file type (CSV/TSV/TXT/XLSX/XLS; macro formats rejected), and size against plan limits; creates a `pending` file record; returns `{ fileId, uploadUrl, objectKey, expiresInSeconds }`. |
 | `POST /uploads/{fileId}/complete` | Verifies the object actually landed in storage (and its real size); marks the record `uploaded`. 409 if storage never received the file; idempotent on retry. |
 
+## Implemented (Milestone 4)
+
+| Endpoint | Behavior |
+|---|---|
+| `POST /datasets/from-file` | Creates a dataset + `parse_dataset` job for an uploaded file (must be `uploaded`); dispatches to Celery (inline fallback in keyless dev). Returns `{ datasetId, jobId, status }`. |
+| `GET /jobs/{jobId}` | Job status/progress/current step; membership-checked via the job's workspace. |
+| `GET /datasets/{datasetId}` | Full profile: tables, columns (types, roles, null/unique ratios, stats, examples), sample rows, and data-quality findings. |
+
 ## Rules
 
 - All routes require authenticated workspace access unless explicitly public.
