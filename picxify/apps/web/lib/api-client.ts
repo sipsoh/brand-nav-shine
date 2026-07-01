@@ -33,3 +33,29 @@ export interface HealthResponse {
 export function getApiHealth(): Promise<HealthResponse> {
   return apiFetch<HealthResponse>("/health");
 }
+
+export interface WorkspaceSummary {
+  id: string;
+  name: string;
+  slug: string | null;
+  role: string;
+}
+
+export interface UserSyncResponse {
+  user: { id: string; email: string; name: string | null };
+  workspaces: WorkspaceSummary[];
+  created: boolean;
+}
+
+export function syncUser(token: string): Promise<UserSyncResponse> {
+  return apiFetch<UserSyncResponse>("/users/sync", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function listWorkspaces(token: string): Promise<{ workspaces: WorkspaceSummary[] }> {
+  return apiFetch<{ workspaces: WorkspaceSummary[] }>("/workspaces", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}

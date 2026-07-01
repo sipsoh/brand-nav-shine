@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
     s3_force_path_style: bool = True
 
+    clerk_secret_key: str = ""
+    clerk_jwks_url: str = ""
+
     @property
     def cors_origins(self) -> list[str]:
         return [self.app_url]

@@ -1,5 +1,8 @@
+import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AuthControls } from "@/components/auth/auth-controls";
+import { clerkEnabled } from "@/lib/auth";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -11,7 +14,7 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  return (
+  const content = (
     <html lang="en">
       <body className="min-h-screen antialiased">
         <header className="border-b border-neutral-200 bg-white">
@@ -26,6 +29,7 @@ export default function RootLayout({
               <Link href="/app" className="hover:text-neutral-900">
                 App
               </Link>
+              <AuthControls />
               <Link
                 href="/app/upload"
                 className="rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white hover:bg-neutral-700"
@@ -39,4 +43,6 @@ export default function RootLayout({
       </body>
     </html>
   );
+
+  return clerkEnabled ? <ClerkProvider>{content}</ClerkProvider> : content;
 }

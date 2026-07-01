@@ -1,11 +1,12 @@
 import Link from "next/link";
+import { WorkspaceBootstrap } from "@/components/workspace/workspace-bootstrap";
 
 export default function AppHomePage() {
   return (
-    <div className="mx-auto max-w-6xl px-6 py-16">
+    <div className="py-16">
       <h1 className="text-3xl font-bold tracking-tight text-neutral-900">Home</h1>
       <p className="mt-2 text-neutral-600">
-        Workspace auth arrives in Milestone 2. For now, start from an upload.
+        Start from an upload, or pick up one of your dashboards.
       </p>
       <div className="mt-8 flex gap-4">
         <Link
@@ -20,6 +21,9 @@ export default function AppHomePage() {
         >
           My dashboards
         </Link>
+      </div>
+      <div className="mt-12">
+        <WorkspaceBootstrap />
       </div>
     </div>
   );
