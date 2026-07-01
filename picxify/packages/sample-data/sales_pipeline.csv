@@ -1,0 +1,16 @@
+deal_id,account,owner,stage,amount,created_date,close_date,segment
+D-1001,Acme Corp,Jordan Lee,Won,24000,2026-03-02,2026-05-14,Mid-Market
+D-1002,Bright Labs,Sam Ortiz,Won,8500,2026-03-10,2026-04-28,SMB
+D-1003,Cedar Health,Jordan Lee,Lost,31000,2026-03-15,2026-06-01,Enterprise
+D-1004,Delta Freight,Priya Nair,Negotiation,18500,2026-04-01,2026-07-15,Mid-Market
+D-1005,Everline,Sam Ortiz,Won,5200,2026-04-05,2026-05-20,SMB
+D-1006,Fenwick & Co,Priya Nair,Proposal,42000,2026-04-12,2026-08-01,Enterprise
+D-1007,Glenview Schools,Jordan Lee,Discovery,12800,2026-04-20,2026-07-30,Mid-Market
+D-1008,Harbor Foods,Sam Ortiz,Won,9600,2026-04-22,2026-06-10,SMB
+D-1009,Ironpeak,Priya Nair,Lost,15000,2026-05-01,2026-06-18,Mid-Market
+D-1010,Juniper Retail,Jordan Lee,Negotiation,27500,2026-05-08,2026-07-22,Mid-Market
+D-1011,Kestrel Aero,Priya Nair,Proposal,56000,2026-05-15,2026-09-01,Enterprise
+D-1012,Lumen Fitness,Sam Ortiz,Won,4700,2026-05-18,2026-06-25,SMB
+D-1013,Maple & Main,Jordan Lee,Discovery,7800,2026-06-01,2026-08-15,SMB
+D-1014,Northgate Bank,Priya Nair,Negotiation,38000,2026-06-05,2026-08-30,Enterprise
+D-1015,Orchard Med,Sam Ortiz,Won,11200,2026-06-10,2026-06-28,Mid-Market

@@ -1,0 +1,13 @@
+respondent_id,segment,nps_score,ease_of_use,value_for_money,support_rating,comment
+R-001,SMB,9,5,4,5,"Setup took minutes and the dashboards look great."
+R-002,Enterprise,7,4,3,4,"Good overall but exports could be more flexible."
+R-003,SMB,10,5,5,5,"Replaced hours of spreadsheet work every week."
+R-004,Mid-Market,6,3,3,4,"Charts are nice but I want more control over colors."
+R-005,Enterprise,4,3,2,3,"Pricing feels steep for our usage level."
+R-006,SMB,8,4,4,4,"Clients love the shared links."
+R-007,Mid-Market,9,5,4,5,"The assumption editor saved us from a bad metric."
+R-008,SMB,10,5,5,4,"Best reporting tool we have tried this year."
+R-009,Enterprise,5,3,3,2,"Support response times were slow last month."
+R-010,Mid-Market,8,4,4,4,"Source traces make it easy to trust the numbers."
+R-011,SMB,7,4,3,4,"Would like scheduled refresh for weekly reports."
+R-012,Enterprise,9,4,4,5,"Onboarding for the team was smooth."

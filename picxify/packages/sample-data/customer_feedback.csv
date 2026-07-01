@@ -1,0 +1,13 @@
+feedback_id,date,source,rating,status,comment
+F-2001,2026-06-02,Email,2,Open,"The export to PDF cut off my widest chart."
+F-2002,2026-06-03,In-app,5,Closed,"Love the new share page, client was impressed."
+F-2003,2026-06-05,Support,3,Open,"Upload failed twice on a 40MB Excel file."
+F-2004,2026-06-08,In-app,4,Closed,"Great insights, but I want to rename KPI labels."
+F-2005,2026-06-10,Email,1,Open,"Dates in my report showed the wrong month."
+F-2006,2026-06-12,Support,4,Closed,"Helpful support, resolved my billing question fast."
+F-2007,2026-06-15,In-app,5,Closed,"Source trace drawer is exactly what my CFO asked for."
+F-2008,2026-06-18,Email,3,Open,"Need Google Sheets sync for weekly reporting."
+F-2009,2026-06-21,In-app,2,Open,"Dashboard generation took over two minutes today."
+F-2010,2026-06-24,Support,5,Closed,"Assumption editing fixed a mismapped revenue column."
+F-2011,2026-06-26,Email,4,Closed,"Would pay extra for white-label share links."
+F-2012,2026-06-29,In-app,3,Open,"Survey template missed one of my rating columns."
