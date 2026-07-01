@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     clerk_secret_key: str = ""
     clerk_jwks_url: str = ""
 
+    max_upload_mb_free: int = 10
+    max_upload_mb_creator: int = 100
+
     @property
     def cors_origins(self) -> list[str]:
         return [self.app_url]

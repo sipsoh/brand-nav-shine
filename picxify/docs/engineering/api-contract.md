@@ -20,6 +20,13 @@ All endpoints below require a Clerk-issued bearer JWT (verified against `CLERK_J
 | `POST /workspaces` | Creates a workspace and an `owner` membership. Returns 201. |
 | `GET /workspaces/{id}` | Returns the workspace if the user is a member; otherwise 404 (non-members must not be able to confirm a workspace exists). |
 
+## Implemented (Milestone 3)
+
+| Endpoint | Behavior |
+|---|---|
+| `POST /uploads/presign` | Validates membership (editor+), file type (CSV/TSV/TXT/XLSX/XLS; macro formats rejected), and size against plan limits; creates a `pending` file record; returns `{ fileId, uploadUrl, objectKey, expiresInSeconds }`. |
+| `POST /uploads/{fileId}/complete` | Verifies the object actually landed in storage (and its real size); marks the record `uploaded`. 409 if storage never received the file; idempotent on retry. |
+
 ## Rules
 
 - All routes require authenticated workspace access unless explicitly public.

@@ -1,5 +1,20 @@
 # Changelog
 
+## Milestone 3 — Upload and storage (2026-07-01)
+
+- API: `uploaded_files` model + migration `0002`, with a `pending → uploaded` lifecycle and a
+  status CHECK constraint.
+- API: S3/MinIO storage service (presigned PUT/GET, object stat) behind a FastAPI dependency.
+- API: `POST /uploads/presign` — membership (editor+), file-type allowlist (macro-enabled Office
+  formats rejected), size limit, filename sanitization against path traversal; object keys are
+  scoped as `workspaces/{workspaceId}/uploads/{fileId}/{filename}`.
+- API: `POST /uploads/{fileId}/complete` — verifies the object exists in storage, re-checks the
+  real object size (a client-declared size is not trusted), idempotent on retry.
+- Web: drag-and-drop upload on `/app/upload` running the full presign → PUT → complete flow
+  with step-by-step progress, success, and friendly error states.
+- Tests: 10 new pytest cases (34 total) covering validation, traversal, tenancy isolation on
+  both endpoints, missing-object 409, and size-lie rejection at completion time.
+
 ## Milestone 2 — Auth, workspace, and navigation (2026-07-01)
 
 - API: Clerk JWT verification via JWKS (`app/auth.py`) with key-rotation refresh, expiry and

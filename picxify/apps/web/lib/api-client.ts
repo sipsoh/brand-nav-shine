@@ -59,3 +59,42 @@ export function listWorkspaces(token: string): Promise<{ workspaces: WorkspaceSu
     headers: { Authorization: `Bearer ${token}` },
   });
 }
+
+export interface PresignResponse {
+  fileId: string;
+  uploadUrl: string;
+  objectKey: string;
+  expiresInSeconds: number;
+}
+
+export function presignUpload(
+  token: string,
+  input: { workspaceId: string; filename: string; mimeType: string; sizeBytes: number },
+): Promise<PresignResponse> {
+  return apiFetch<PresignResponse>("/uploads/presign", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input),
+  });
+}
+
+export function completeUpload(
+  token: string,
+  fileId: string,
+): Promise<{ fileId: string; status: string }> {
+  return apiFetch<{ fileId: string; status: string }>(`/uploads/${fileId}/complete`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function putToPresignedUrl(uploadUrl: string, file: File): Promise<void> {
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    body: file,
+    headers: file.type ? { "Content-Type": file.type } : undefined,
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, "Upload to storage failed.");
+  }
+}
