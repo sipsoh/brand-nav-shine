@@ -53,9 +53,11 @@ def test_currency_strings_converted():
 
 
 def test_percent_strings_converted():
+    # Stored as 0-1 fractions so percent formatting can always multiply by
+    # 100 — "45%" surfacing as "4500%" was a real bug.
     df = pd.DataFrame({"ctr": ["2.5%", "3.1%", "1.9%"]})
     result = normalize_table(df)
-    assert result.dataframe["ctr"].tolist() == [2.5, 3.1, 1.9]
+    assert result.dataframe["ctr"].tolist() == [0.025, 0.031, 0.019]
     assert result.type_hints["ctr"] == "percent"
 
 

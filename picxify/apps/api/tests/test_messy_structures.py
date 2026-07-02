@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from app.services.normalization import normalize_table
-from app.services.parser import parse_csv, parse_excel
+from app.services.parser import add_union_candidates, parse_csv, parse_excel
 
 
 def excel_bytes(grid: list[list], sheet: str = "Sheet1", extra: dict | None = None) -> bytes:
@@ -208,6 +208,132 @@ def test_wide_period_columns_unpivot_to_long():
     assert sorted(out["Period"].dt.month.unique().tolist()) == [1, 2, 3]
     kinds = {n.finding_type for n in normalized.notes}
     assert "wide_periods_unpivoted" in kinds
+
+
+def test_single_blank_row_splits_when_next_row_is_a_header():
+    grid = [
+        ["Code", "Meaning"],
+        ["A", "Active"],
+        ["C", "Cancelled"],
+        [None, None],
+        ["Date", "Amount"],
+        ["2026-01-05", 100.0],
+        ["2026-01-12", 140.0],
+    ]
+    tables = parse_excel("ops.xlsx", excel_bytes(grid, sheet="Ops"))
+    assert [t.name for t in tables] == ["Ops (block 1)", "Ops (block 2)"]
+    assert list(tables[1].dataframe.columns) == ["Date", "Amount"]
+
+
+def test_grouped_report_with_blank_spacer_rows_stays_one_table():
+    # Blank rows between GROUPS of data rows are layout, not new tables.
+    grid = [
+        ["Account", "Amount"],
+        ["AC-1", 100.0],
+        ["AC-2", 120.0],
+        [None, None],
+        ["AC-3", 90.0],
+        ["AC-4", 60.0],
+    ]
+    tables = parse_excel("grouped.xlsx", excel_bytes(grid, sheet="Report"))
+    assert [t.name for t in tables] == ["Report"]
+    assert len(tables[0].dataframe.dropna(how="all")) == 4
+
+
+def test_three_row_merged_header_flattened():
+    grid = [
+        ["Region", "2025", None, None, None],
+        [None, "H1", None, "H2", None],
+        [None, "Revenue", "Orders", "Revenue", "Orders"],
+        ["West", 100.0, 5, 130.0, 6],
+        ["East", 90.0, 4, 120.0, 7],
+    ]
+    tables = parse_excel("report.xlsx", excel_bytes(grid))
+    assert list(tables[0].dataframe.columns) == [
+        "Region",
+        "2025 H1 Revenue",
+        "2025 H1 Orders",
+        "2025 H2 Revenue",
+        "2025 H2 Orders",
+    ]
+
+
+def test_placeholder_null_tokens_cleared_so_numbers_coerce():
+    df = pd.DataFrame({"revenue": ["1,200.00", "N/A", "980.00", "-", "1,500.00"]})
+    normalized = normalize_table(df)
+    values = normalized.dataframe["revenue"].tolist()
+    assert values[0] == pytest.approx(1200.0)
+    assert pd.isna(values[1]) and pd.isna(values[3])
+    kinds = {n.finding_type for n in normalized.notes}
+    assert "placeholder_nulls" in kinds
+    assert "type_converted" in kinds  # the column still became numeric
+
+
+def test_trailing_minus_and_space_thousands():
+    df = pd.DataFrame({"betrag": ["1 234,56", "2 500,00", "1 000,00-"]})
+    normalized = normalize_table(df)
+    assert normalized.dataframe["betrag"].tolist() == pytest.approx([1234.56, 2500.0, -1000.0])
+
+
+def test_repeated_header_rows_inside_data_removed():
+    df = pd.DataFrame(
+        {
+            "Region": ["West", "Region", "East"],
+            "Revenue": ["100.00", "Revenue", "90.00"],
+        }
+    )
+    normalized = normalize_table(df)
+    assert len(normalized.dataframe) == 2
+    assert normalized.dataframe["Revenue"].tolist() == pytest.approx([100.0, 90.0])
+    kinds = {n.finding_type for n in normalized.notes}
+    assert "repeated_header_rows_removed" in kinds
+
+
+def test_month_only_pivot_unpivots_with_string_periods():
+    df = pd.DataFrame(
+        {
+            "Product": ["A", "B"],
+            "Jan": [10.0, 20.0],
+            "Feb": [11.0, 21.0],
+            "Mar": [12.0, 22.0],
+        }
+    )
+    normalized = normalize_table(df, table_name="Sales by Product")
+    out = normalized.dataframe
+    assert set(out.columns) == {"Product", "Period", "Sales"}
+    assert sorted(out["Period"].unique().tolist()) == ["Feb", "Jan", "Mar"]
+    assert len(out) == 6  # no invented dates
+    assert not pd.api.types.is_datetime64_any_dtype(out["Period"])
+
+
+def test_union_combines_disjoint_same_schema_sheets():
+    jan = pd.DataFrame({"Date": ["2026-01-05"], "Revenue": [100.0]})
+    feb = pd.DataFrame({"Date": ["2026-02-03"], "Revenue": [120.0]})
+    mar = pd.DataFrame({"Date": ["2026-03-02"], "Revenue": [90.0]})
+    from app.services.parser import RawTable
+
+    tables = add_union_candidates(
+        [RawTable("Jan", jan), RawTable("Feb", feb), RawTable("Mar", mar)]
+    )
+    names = [t.name for t in tables]
+    assert "Combined (3 sheets)" in names
+    combined = next(t for t in tables if t.name.startswith("Combined"))
+    assert list(combined.dataframe.columns) == ["Source Sheet", "Date", "Revenue"]
+    assert len(combined.dataframe) == 3
+
+
+def test_union_skipped_for_master_plus_filtered_views():
+    # A master sheet and per-category tabs holding the SAME rows must not be
+    # double-counted.
+    master = pd.DataFrame({"Id": ["T1", "T2", "T3"], "Amount": [1.0, 2.0, 3.0]})
+    cat_a = master.iloc[:2].copy()
+    cat_b = master.iloc[2:].copy()
+    from app.services.parser import RawTable
+
+    tables = add_union_candidates(
+        [RawTable("Master", master), RawTable("Cat A", cat_a), RawTable("Cat B", cat_b)]
+    )
+    assert not any(t.name.startswith("Combined") for t in tables)
 
 
 def test_unpivot_requires_three_periods_and_numeric_bodies():

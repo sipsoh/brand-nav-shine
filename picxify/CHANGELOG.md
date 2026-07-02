@@ -1,5 +1,29 @@
 # Changelog
 
+## Data engine round 2: unions, single-gap splits, dirty values (2026-07-02)
+
+Documented in `docs/engineering/data-engine.md`.
+
+- **Same-schema sheet union**: ≥3 sheets sharing identical columns (per-month
+  tabs) combine into one table with a `Source Sheet` column — the monthly-tabs
+  fixture now yields a full-period revenue trend impossible from any single
+  tab. **Overlap guard**: a master sheet plus filtered category views (the real
+  ticket workbook's shape) is detected by row overlap and never double-counted.
+- **Single blank row splits** when the next row is header-shaped (labels only);
+  grouped reports with blank spacer rows stay one table.
+- **Stacked merged headers** flatten up to three levels ("2025 H1 Revenue").
+- **Month-only crosstabs** (no year anywhere) unpivot with month-name periods —
+  no invented dates.
+- **Dirty values**: placeholder nulls (N/A, -, —, #REF!, …) become real nulls
+  so numeric columns still coerce; SAP trailing-minus ("1.234,56-"), space
+  thousands ("1 234,56"), unicode minus; repeated header lines mid-file
+  (page-break exports) dropped.
+- **Percent scale fixed**: percent strings stored as 0-1 fractions — "45%"
+  can no longer surface as "4500%" in a KPI.
+- 4 new fixtures (monthly tabs, month-only pivot, single-gap scatter, dirty
+  values CSV): 17/17 evals; 137 tests. Real 21-sheet ticket workbook verified
+  unchanged (7,581 unique tickets, no double-count).
+
 ## Messy-data engine + per-widget provenance (2026-07-02)
 
 Every data point on the dashboard now carries an always-visible source line

@@ -109,6 +109,61 @@ def parse_excel(filename: str, data: bytes) -> list[RawTable]:
     return tables
 
 
+def add_union_candidates(tables: list[RawTable]) -> list[RawTable]:
+    """Workbooks often split ONE dataset across many same-schema sheets
+    (per-month tabs, per-region tabs). When >= 3 sheets share an identical
+    column signature, add a combined table with a 'Source Sheet' column as an
+    extra candidate — table scoring decides whether it becomes the dashboard
+    base. Original tables are always kept."""
+    groups: dict[tuple, list[RawTable]] = {}
+    for table in tables:
+        signature = tuple(str(c) for c in table.dataframe.columns)
+        if len(signature) >= 2:
+            groups.setdefault(signature, []).append(table)
+
+    combined: list[RawTable] = []
+    for signature, members in groups.items():
+        if len(members) < 3 or "Source Sheet" in signature:
+            continue
+        # Master-plus-filtered-views workbooks (a 'Tickets' sheet and per-
+        # category tabs holding the SAME rows) must not be double-counted:
+        # only disjoint slices union safely.
+        bare = pd.concat([m.dataframe for m in members], ignore_index=True)
+        try:
+            duplicate_ratio = float(bare.duplicated().mean())
+        except TypeError:  # unhashable cells: play safe, skip the union
+            continue
+        if duplicate_ratio > 0.02:
+            continue
+        frames = []
+        for member in members:
+            frame = member.dataframe.copy()
+            frame.insert(0, "Source Sheet", member.name)
+            frames.append(frame)
+        union = pd.concat(frames, ignore_index=True)
+        names = [m.name for m in members]
+        combined.append(
+            RawTable(
+                name=f"Combined ({len(members)} sheets)",
+                dataframe=union,
+                notes=[
+                    TransformNote(
+                        finding_type="sheets_combined",
+                        severity="info",
+                        message=(
+                            f"{len(members)} sheets share the same columns and were "
+                            f"also combined into one table ({', '.join(names[:6])}"
+                            + ("…" if len(names) > 6 else "")
+                            + "). A 'Source Sheet' column says where each row came from."
+                        ),
+                        meta={"sheets": names},
+                    )
+                ],
+            )
+        )
+    return tables + combined
+
+
 # --- sheet structure detection ---------------------------------------------
 
 MAX_HEADER_SCAN_ROWS = 12
@@ -125,7 +180,7 @@ def extract_tables(sheet_name: str, grid: pd.DataFrame) -> list[RawTable]:
     for row_lo, row_hi in _vertical_blocks(grid):
         band = grid.iloc[row_lo:row_hi]
         for col_lo, col_hi in _horizontal_blocks(band):
-            blocks.append(band.iloc[:, col_lo:col_hi])
+            blocks.extend(_split_on_new_header(band.iloc[:, col_lo:col_hi]))
 
     candidates: list[tuple[pd.DataFrame, list[TransformNote]]] = []
     skipped_small = 0
@@ -204,6 +259,34 @@ def _vertical_blocks(grid: pd.DataFrame) -> list[tuple[int, int]]:
     return blocks
 
 
+def _split_on_new_header(block: pd.DataFrame) -> list[pd.DataFrame]:
+    """A single blank row inside a block usually separates groups WITHIN one
+    table — but when the row after the blank looks like a fresh header, it is
+    a new table. Grouped reports are safe: their continuation rows are data,
+    not header-shaped."""
+    block = block.reset_index(drop=True)
+    width = block.shape[1]
+    filled = block.notna().any(axis=1).tolist()
+    cut_points: list[int] = []
+    for index in range(2, len(block) - MIN_TABLE_ROWS):
+        if (
+            not filled[index - 1]
+            and filled[index]
+            and _is_label_only_header(block.iloc[index], width)
+            and sum(filled[:index]) >= MIN_TABLE_ROWS
+        ):
+            cut_points.append(index)
+    if not cut_points:
+        return [block]
+    pieces: list[pd.DataFrame] = []
+    previous = 0
+    for cut in cut_points:
+        pieces.append(block.iloc[previous:cut])
+        previous = cut
+    pieces.append(block.iloc[previous:])
+    return pieces
+
+
 def _horizontal_blocks(band: pd.DataFrame) -> list[tuple[int, int]]:
     """Side-by-side tables: column ranges separated by fully blank columns.
     Only splits when both sides are at least two columns wide."""
@@ -244,27 +327,35 @@ def _table_from_block(block: pd.DataFrame) -> tuple[pd.DataFrame, list[Transform
             continue
         if _is_header_row(row, width):
             # Merged-cell spans leave MANY gaps in the top header row (each
-            # span covers several columns); when the row below is a dense
-            # all-string label row, the two form one header ("Region | Q1
-            # [span] | Q2 [span]" over "· | Revenue | Orders"). A single
-            # blank header cell is NOT a span — data rows full of currency/
-            # date strings must never be eaten as header labels.
-            spans = row.isna().sum() >= max(2, int(width * 0.3))
-            if (
-                spans
-                and index + 1 < len(block)
-                and _is_stringy_label_row(block.iloc[index + 1], width)
+            # span covers several columns); while that is true and the row
+            # below is a dense all-string label row, absorb it into the
+            # header ("Region | Q1 [span] | Q2 [span]" over "· | Revenue |
+            # Orders"), up to three rows deep. A single blank header cell is
+            # NOT a span — data rows full of currency/date strings must
+            # never be eaten as header labels.
+            rows = [index]
+            while (
+                len(rows) < 3
+                and block.iloc[rows[-1]].isna().sum() >= max(2, int(width * 0.3))
+                and rows[-1] + 1 < len(block)
+                and _is_stringy_label_row(block.iloc[rows[-1] + 1], width)
             ):
-                header_rows = (index, index + 1)
-            else:
-                header_rows = (index,)
+                rows.append(rows[-1] + 1)
+            header_rows = tuple(rows)
             break
-        # Sparse stringy row directly above a dense header row: also a
-        # merged-cell two-row header.
-        if index + 1 < len(block) and _is_merged_header_top(row, width):
-            below = block.iloc[index + 1]
-            if _is_header_row(below, width):
-                header_rows = (index, index + 1)
+        # A run of sparse stringy rows directly above a dense header row:
+        # a stacked merged-cell header (up to three levels).
+        if _is_merged_header_top(row, width):
+            run = [index]
+            while (
+                len(run) < 2
+                and run[-1] + 1 < len(block)
+                and _is_merged_header_top(block.iloc[run[-1] + 1], width)
+            ):
+                run.append(run[-1] + 1)
+            below = run[-1] + 1
+            if below < len(block) and _is_header_row(block.iloc[below], width):
+                header_rows = (*run, below)
                 break
         if cells <= max(2, int(width * 0.34)):
             banner_rows.append(index)  # title/logo/export-stamp line
@@ -294,17 +385,23 @@ def _table_from_block(block: pd.DataFrame) -> tuple[pd.DataFrame, list[Transform
                     meta={"count": len(banner_rows)},
                 )
             )
-        if len(header_rows) == 2:
-            top = block.iloc[header_rows[0]].ffill()
-            bottom = block.iloc[header_rows[1]]
+        if len(header_rows) > 1:
+            # Span rows forward-fill across their merged range; the bottom
+            # row holds the leaf labels as-is.
+            levels = [block.iloc[r].ffill() for r in header_rows[:-1]]
+            levels.append(block.iloc[header_rows[-1]])
             columns = [
-                _join_header(top.iloc[i], bottom.iloc[i], i) for i in range(width)
+                _join_header([level.iloc[i] for level in levels], i)
+                for i in range(width)
             ]
             notes.append(
                 TransformNote(
                     finding_type="merged_header_flattened",
                     severity="info",
-                    message="Combined a two-row (merged-cell) header into single column names.",
+                    message=(
+                        f"Combined a {len(header_rows)}-row (merged-cell) header "
+                        "into single column names."
+                    ),
                     meta={"rows": list(header_rows)},
                 )
             )
@@ -362,6 +459,25 @@ def _is_merged_header_top(row: pd.Series, width: int) -> bool:
     return all(isinstance(v, str) and v.strip() for v in values)
 
 
+DATA_STRING = re.compile(
+    r"^\s*([$€£(]|-?[\d,. ]+[%)-]?\s*$|\d{1,4}[-/.]\d{1,2}([-/.]\d{1,4})?)"
+)
+
+
+def _is_label_only_header(row: pd.Series, width: int) -> bool:
+    """The strict header test used for SPLITTING a block at a single blank
+    row: every cell must read as a label. Data rows full of ids, currency,
+    or date strings must never trigger a split of a grouped report."""
+    if not _is_header_row(row, width):
+        return False
+    values = [v for v in row.tolist() if not pd.isna(v)]
+    strings = [v for v in values if isinstance(v, str)]
+    non_strings = [v for v in values if not isinstance(v, str)]
+    if any(not _looks_like_period(v) for v in non_strings):
+        return False  # raw numbers that are not year/period headers -> data
+    return not any(DATA_STRING.match(v) for v in strings)
+
+
 def _is_stringy_label_row(row: pd.Series, width: int) -> bool:
     """A dense, almost-entirely-string row — the bottom half of a merged
     header. The high string bar keeps real data rows (ids + numbers) out."""
@@ -400,9 +516,10 @@ def _header_cell(value, index: int) -> str:
     return str(value).strip()
 
 
-def _join_header(top, bottom, index: int) -> str:
-    top_text = "" if pd.isna(top) else str(top).strip()
-    bottom_text = "" if pd.isna(bottom) else str(bottom).strip()
-    if top_text and bottom_text and top_text.lower() != bottom_text.lower():
-        return f"{top_text} {bottom_text}"
-    return bottom_text or top_text or f"column_{index + 1}"
+def _join_header(parts: list, index: int) -> str:
+    texts: list[str] = []
+    for part in parts:
+        text = "" if pd.isna(part) else str(part).strip()
+        if text and (not texts or texts[-1].lower() != text.lower()):
+            texts.append(text)
+    return " ".join(texts) or f"column_{index + 1}"

@@ -19,7 +19,7 @@ from app.models.job import GenerationJob, JobStatus
 from app.models.upload import FileStatus, UploadedFile
 from app.services.llm import get_semantic_mapper_llm
 from app.services.normalization import normalize_table, snake_case
-from app.services.parser import ParseError, parse_file
+from app.services.parser import ParseError, add_union_candidates, parse_file
 from app.services.profiler import profile_table
 from app.services.semantic_mapper import ColumnInput, TableInput, map_dataset
 
@@ -72,7 +72,7 @@ def _run(
     _progress(db, job, *PROGRESS_STEPS[0])
 
     data = storage.get_bytes(uploaded_file.object_key)
-    raw_tables = parse_file(uploaded_file.original_filename, data)
+    raw_tables = add_union_candidates(parse_file(uploaded_file.original_filename, data))
 
     _progress(db, job, *PROGRESS_STEPS[1])
     total_rows = 0

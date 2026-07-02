@@ -404,6 +404,80 @@ def euro_sales_csv() -> None:
     (OUT / "euro_sales.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def monthly_tabs() -> None:
+    """One dataset split across six same-schema month tabs — the engine must
+    combine them (they are disjoint) and analyze the whole year-to-date."""
+    products = ["Starter", "Growth", "Scale", "Enterprise"]
+    with pd.ExcelWriter(OUT / "monthly_tabs.xlsx", engine="openpyxl") as writer:
+        for month in range(1, 7):
+            rows = []
+            for _ in range(random.randrange(60, 90)):
+                day = date(2026, month, random.randrange(1, 28))
+                units = random.randrange(1, 15)
+                rows.append(
+                    {
+                        "Date": day.isoformat(),
+                        "Product": random.choice(products),
+                        "Units": units,
+                        "Revenue": money(units * random.choice([49, 99, 249, 499])),
+                    }
+                )
+            sheet = date(2026, month, 1).strftime("%b %Y")
+            pd.DataFrame(rows).to_excel(writer, sheet_name=sheet, index=False)
+
+
+def month_only_pivot() -> None:
+    """Crosstab with month columns and NO year anywhere."""
+    products = ["Espresso", "Filter", "Cold Brew", "Decaf", "Tea"]
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"]
+    rows = []
+    for product in products:
+        row = {"Product": product}
+        base = random.uniform(2_000, 9_000)
+        for i, month in enumerate(months):
+            row[month] = round(base * (0.9 + 0.05 * i) * (0.9 + random.random() * 0.2), 2)
+        rows.append(row)
+    with pd.ExcelWriter(OUT / "month_only_pivot.xlsx", engine="openpyxl") as writer:
+        pd.DataFrame(rows).to_excel(writer, sheet_name="Sales by Product", index=False)
+
+
+def single_gap_scatter() -> None:
+    """A lookup table and the real table separated by only ONE blank row —
+    the header-after-blank rule must split them."""
+    lookup = [["Code", "Meaning"], ["A", "Active"], ["C", "Cancelled"], ["P", "Pending"]]
+    main: list[list] = [["Date", "Account", "Status Code", "Amount"]]
+    start = date(2026, 2, 2)
+    for i in range(180):
+        main.append(
+            [
+                (start + timedelta(days=random.randrange(140))).isoformat(),
+                f"AC-{1200 + i}",
+                random.choice(["A", "C", "P"]),
+                money(random.choice([120, 340, 780, 1_500]) * (0.8 + random.random() * 0.5)),
+            ]
+        )
+    grid = lookup + [[None, None, None, None]] + main
+    with pd.ExcelWriter(OUT / "single_gap_scatter.xlsx", engine="openpyxl") as writer:
+        pd.DataFrame(grid).to_excel(writer, sheet_name="Ops Data", index=False, header=False)
+
+
+def dirty_values_csv() -> None:
+    """US-style export with placeholder nulls, accounting negatives, percent
+    strings, and the header line repeated mid-file (page-break export)."""
+    regions = ["West", "East", "Central", "South"]
+    lines = ["Region,Month,Revenue,Discount"]
+    for month in range(1, 7):
+        for region in regions:
+            revenue = random.choice([8_000, 12_000, 18_000, 26_000]) * (0.8 + random.random() * 0.5)
+            refund = random.random() < 0.06
+            rev = f'"({revenue:,.2f})"' if refund else f'"{revenue:,.2f}"'
+            discount = random.choice(["N/A", "-", f"{random.randrange(2, 18)}%"])
+            lines.append(f"{region},{date(2026, month, 1).strftime('%b %Y')},{rev},{discount}")
+        if month == 3:
+            lines.append("Region,Month,Revenue,Discount")  # repeated header
+    (OUT / "dirty_values.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 if __name__ == "__main__":
     sales_pipeline()
     ecommerce_orders()
@@ -418,4 +492,8 @@ if __name__ == "__main__":
     messy_ops_report()
     scattered_report()
     euro_sales_csv()
+    monthly_tabs()
+    month_only_pivot()
+    single_gap_scatter()
+    dirty_values_csv()
     print("fixtures written to", OUT)

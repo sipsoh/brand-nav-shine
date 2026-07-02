@@ -110,6 +110,37 @@ EXPECTATIONS = {
         "required_kpi_tokens": ["total umsatz"],
         "chart_aggregations_forbidden": [],
     },
+    "monthly_tabs.xlsx": {
+        # One dataset split across six disjoint month tabs: combined into a
+        # single table so the dashboard covers the whole period.
+        "use_case": None,
+        "primary_sheet": "Combined (6 sheets)",
+        "required_kpi_tokens": ["total revenue"],
+        "chart_aggregations_forbidden": [],
+    },
+    "month_only_pivot.xlsx": {
+        # Month columns with no year anywhere still unpivot (periods stay as
+        # month names — no invented dates). Value column named from the sheet.
+        "use_case": None,
+        "primary_sheet": "Sales by Product",
+        "required_kpi_tokens": ["total sales"],
+        "chart_aggregations_forbidden": [],
+    },
+    "single_gap_scatter.xlsx": {
+        # A lookup block and the real table separated by ONE blank row.
+        "use_case": None,
+        "primary_sheet": "Ops Data (block 2)",
+        "required_kpi_tokens": ["total amount"],
+        "chart_aggregations_forbidden": [],
+    },
+    "dirty_values.csv": {
+        # Placeholder nulls (N/A, -), accounting negatives, percent strings,
+        # and a repeated header line mid-file.
+        "use_case": None,
+        "primary_sheet": "dirty_values",
+        "required_kpi_tokens": ["total revenue"],
+        "chart_aggregations_forbidden": [("Discount", "sum")],
+    },
 }
 
 

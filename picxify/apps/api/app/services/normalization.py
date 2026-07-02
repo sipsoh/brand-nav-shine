@@ -13,12 +13,14 @@ FOOTER_PATTERN = re.compile(r"^\s*(grand\s+)?(sub)?total[s]?\b", re.IGNORECASE)
 # Covers "$1,234.56", "-$1,234", and accounting-style negatives "($1,234.56)".
 CURRENCY_PATTERN = re.compile(r"^\s*(-?[$€£]\s*[\d,]+(\.\d+)?|\(\s*[$€£]?\s*[\d,]+(\.\d+)?\s*\))\s*$")
 PERCENT_PATTERN = re.compile(r"^\s*-?[\d,]+(\.\d+)?\s*%\s*$")
-NUMERIC_PATTERN = re.compile(r"^\s*-?[\d,]+(\.\d+)?\s*$")
-# European style: dot as thousands separator, comma as decimal ("1.234,56"),
-# optionally with a currency symbol. Requires a comma-decimal or a dot-group
-# so it cannot swallow plain US-style numbers.
+# Trailing minus ("1,234.56-") is SAP/accounting-export style.
+NUMERIC_PATTERN = re.compile(r"^\s*-?[\d,]+(\.\d+)?\s*-?\s*$")
+# European style: dot or space as thousands separator, comma as decimal
+# ("1.234,56", "1 234,56"), optionally with a currency symbol and a trailing
+# minus. Requires a comma-decimal or a separator group so it cannot swallow
+# plain US-style numbers.
 EURO_NUMERIC_PATTERN = re.compile(
-    r"^\s*-?[$€£]?\s*(\d{1,3}(\.\d{3})+(,\d+)?|\d+,\d+)\s*$"
+    r"^\s*-?[$€£]?\s*(\d{1,3}([. ]\d{3})+(,\d+)?|\d+,\d+)\s*-?\s*$"
 )
 
 COERCION_THRESHOLD = 0.9  # fraction of non-null values that must parse
@@ -59,8 +61,10 @@ def normalize_table(dataframe: pd.DataFrame, table_name: str | None = None) -> N
 
     df = _drop_blank(df, notes)
     df = _dedupe_columns(df, notes)
+    df = _drop_repeated_header_rows(df, notes)
     df = _drop_footer_rows(df, notes)
     df = _trim_strings(df)
+    df = _null_placeholder_tokens(df, notes)
     df = _coerce_numeric_strings(df, notes, type_hints)
     df = _coerce_dates(df, notes)
     df = _unpivot_wide_periods(df, notes, table_name)
@@ -166,6 +170,67 @@ def _trim_strings(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# Cell values that mean "no data" in hand-made spreadsheets. Left in place they
+# poison type detection (a numeric column with 'N/A's reads as text).
+NULL_TOKENS = {"n/a", "na", "n.a.", "-", "--", "—", "–", "none", "null", "nil", "tbd", "?", "#n/a", "#ref!", "#div/0!", "#value!"}
+
+
+def _null_placeholder_tokens(df: pd.DataFrame, notes: list[TransformNote]) -> pd.DataFrame:
+    replaced: dict[str, int] = {}
+    for column in df.columns:
+        if not _is_text_dtype(df[column]):
+            continue
+        mask = df[column].map(
+            lambda v: isinstance(v, str) and v.strip().lower() in NULL_TOKENS
+        )
+        count = int(mask.sum())
+        if count:
+            df.loc[mask, column] = None
+            replaced[str(column)] = count
+    if replaced:
+        total = sum(replaced.values())
+        notes.append(
+            TransformNote(
+                finding_type="placeholder_nulls",
+                severity="info",
+                message=(
+                    f"Treated {total} placeholder value(s) (N/A, -, none, …) as missing "
+                    f"in: {', '.join(sorted(replaced))}."
+                ),
+                meta={"columns": replaced},
+            )
+        )
+    return df
+
+
+def _drop_repeated_header_rows(df: pd.DataFrame, notes: list[TransformNote]) -> pd.DataFrame:
+    """Page-break exports repeat the header line mid-table; drop rows whose
+    non-null cells all equal their own column names."""
+    if df.empty:
+        return df
+    names = {str(c).strip().lower() for c in df.columns}
+
+    def is_header_echo(row) -> bool:
+        values = [v for v in row.tolist() if not pd.isna(v)]
+        if len(values) < 2:
+            return False
+        return all(isinstance(v, str) and v.strip().lower() in names for v in values)
+
+    mask = df.apply(is_header_echo, axis=1)
+    dropped = int(mask.sum())
+    if dropped:
+        df = df[~mask]
+        notes.append(
+            TransformNote(
+                finding_type="repeated_header_rows_removed",
+                severity="info",
+                message=f"Removed {dropped} repeated header row(s) inside the data.",
+                meta={"count": dropped},
+            )
+        )
+    return df
+
+
 def _coerce_numeric_strings(
     df: pd.DataFrame, notes: list[TransformNote], type_hints: dict[str, str]
 ) -> pd.DataFrame:
@@ -186,10 +251,15 @@ def _coerce_numeric_strings(
         def to_number(value):
             if not isinstance(value, str):
                 return value
+            value = value.replace("−", "-")  # unicode minus
             negative = bool(re.match(r"^\s*\(.*\)\s*$", value))  # accounting negatives
+            stripped = value.strip()
+            if stripped.endswith("-") and not stripped.startswith("-"):
+                negative = True  # SAP-style trailing minus ("1,234.56-")
+                value = stripped[:-1]
             if euro_style:
-                # "1.234,56" -> "1234.56"
-                value = value.replace(".", "").replace(",", ".")
+                # "1.234,56" / "1 234,56" -> "1234.56"
+                value = value.replace(".", "").replace(" ", "").replace(",", ".")
             cleaned = re.sub(r"[$€£,%\s()]", "", value)
             if cleaned in {"", "-"}:
                 return None
@@ -233,13 +303,17 @@ def _coerce_numeric_strings(
                 )
             )
         elif percent_ratio >= COERCION_THRESHOLD:
-            df[column] = df[column].map(to_number)
+            # Stored uniformly as 0-1 fractions ("45%" -> 0.45) so percent
+            # formatting downstream can always multiply by 100.
+            df[column] = df[column].map(to_number).map(
+                lambda v: None if v is None else v / 100.0
+            )
             type_hints[column] = "percent"
             notes.append(
                 TransformNote(
                     finding_type="type_converted",
                     severity="info",
-                    message=f"Converted '{column}' from text to percent values.",
+                    message=f"Converted '{column}' from text to percent values (0-1 fractions).",
                     column=column,
                     meta={"to": "percent"},
                 )
@@ -266,6 +340,9 @@ PERIOD_HEADER = re.compile(
     re.IGNORECASE,
 )
 MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+MONTH_ONLY = re.compile(
+    r"^\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*$", re.IGNORECASE
+)
 MIN_PERIOD_COLUMNS = 3
 
 
@@ -292,6 +369,13 @@ def _unpivot_wide_periods(
     columns clearly dominate and hold numbers."""
     periods = {c: _parse_period_header(c) for c in df.columns}
     period_columns = [c for c, parsed in periods.items() if parsed is not None]
+    month_only = False
+    if len(period_columns) < MIN_PERIOD_COLUMNS:
+        # "Product | Jan | Feb | ... " with no year anywhere: still a
+        # crosstab. Periods stay as month names (no invented dates).
+        month_columns = [c for c in df.columns if MONTH_ONLY.match(str(c))]
+        if len(month_columns) >= MIN_PERIOD_COLUMNS:
+            period_columns, month_only = month_columns, True
     id_columns = [c for c in df.columns if c not in period_columns]
     if len(period_columns) < MIN_PERIOD_COLUMNS or len(id_columns) > 3:
         return df
@@ -308,7 +392,8 @@ def _unpivot_wide_periods(
         var_name="Period",
         value_name=value_name,
     )
-    melted["Period"] = melted["Period"].map(lambda c: periods[c])
+    if not month_only:
+        melted["Period"] = melted["Period"].map(lambda c: periods[c])
     melted = melted.dropna(subset=[value_name]).reset_index(drop=True)
     notes.append(
         TransformNote(
@@ -318,10 +403,16 @@ def _unpivot_wide_periods(
                 f"Reshaped {len(period_columns)} period column(s) "
                 f"({period_columns[0]} … {period_columns[-1]}) into rows so "
                 "trends can be analyzed."
+                + (
+                    " Month columns carried no year, so periods stay as month names."
+                    if month_only
+                    else ""
+                )
             ),
             meta={
                 "periodColumns": [str(c) for c in period_columns],
                 "valueColumn": value_name,
+                "monthOnly": month_only,
             },
         )
     )

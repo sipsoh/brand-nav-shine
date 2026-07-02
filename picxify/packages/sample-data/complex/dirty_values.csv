@@ -1,0 +1,26 @@
+Region,Month,Revenue,Discount
+West,Jan 2026,"32,813.93",7%
+East,Jan 2026,"13,142.73",16%
+Central,Jan 2026,"7,463.46",-
+South,Jan 2026,"15,154.38",-
+West,Feb 2026,"22,442.95",4%
+East,Feb 2026,"10,894.94",10%
+Central,Feb 2026,"14,462.00",N/A
+South,Feb 2026,"17,105.97",N/A
+West,Mar 2026,"15,180.01",N/A
+East,Mar 2026,"32,996.25",N/A
+Central,Mar 2026,"20,050.93",-
+South,Mar 2026,"12,647.11",4%
+Region,Month,Revenue,Discount
+West,Apr 2026,"12,455.79",14%
+East,Apr 2026,"18,362.40",-
+Central,Apr 2026,"19,639.76",-
+South,Apr 2026,"24,876.99",N/A
+West,May 2026,"6,630.25",-
+East,May 2026,"22,238.17",N/A
+Central,May 2026,"20,425.53",N/A
+South,May 2026,"7,493.38",-
+West,Jun 2026,"17,807.99",12%
+East,Jun 2026,"6,752.03",N/A
+Central,Jun 2026,"8,012.35",N/A
+South,Jun 2026,"7,200.65",N/A
