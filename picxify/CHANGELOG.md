@@ -1,5 +1,34 @@
 # Changelog
 
+## Milestone 7 — Dashboard generation (2026-07-02)
+
+- Six dashboard template definitions in source control (client report, marketing, sales,
+  survey, customer feedback, generic snapshot) with a use-case selector.
+- Query runner: validated querySpec → pandas execution (group by dimensions and/or date
+  grain, sum/avg/median/min/max/count/count_distinct, sort, limit) with unknown-column and
+  unsupported-aggregation errors.
+- Chart builder: ECharts options built entirely in code from query results (line, area, bar,
+  horizontal_bar, stacked_bar, pie, donut, funnel).
+- Deterministic fallback planner that fills the template from computed facts/insights: hero
+  KPIs (rows, totals, trend with direction, win rate), trend + breakdown + funnel charts,
+  insight cards, executive summary, assumption/source panels, derived actions.
+- Guarded LLM planner: schema-constrained generation against the canonical DashboardSpec,
+  one repair attempt on validation failure, then hard guards — insights swapped back to the
+  code-computed versions by id, KPI values must match a computed fact or the widget is
+  dropped, echartsOptions always rebuilt by code. Any failure falls back to the
+  deterministic planner.
+- Spec validator: canonical JSON-schema validation plus a Picxify-specific source-trace
+  completeness check on every KPI/chart/insight.
+- `dashboards` + `dashboard_versions` models and migration `0005`; generate/list/get
+  endpoints; `picxify.generate_dashboard` Celery task with inline fallback.
+- Web: full DashboardSpec renderer (`spec → UI`, no LLM calls) — KPI cards, ECharts widgets,
+  insight cards, text/assumption/source panels, safe fallback for unknown widget types,
+  "View source" on every widget, trust bar, and recommended actions. "Generate dashboard"
+  button on the dataset page with live job progress; dashboards list page.
+- Tests: 18 new pytest cases (92 total) — query/chart correctness, fallback spec validating
+  against the canonical schema end-to-end, broken charts dropped not rendered, hallucinated
+  KPIs/insights stripped from LLM plans, and the full upload→parse→generate→read flow.
+
 ## Milestone 6 — Insight engine (2026-07-02)
 
 - Insight engine (`app/services/insight_engine.py`): all numeric facts computed by code

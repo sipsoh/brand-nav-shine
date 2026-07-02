@@ -48,6 +48,14 @@ All endpoints below require a Clerk-issued bearer JWT (verified against `CLERK_J
 |---|---|
 | `GET /datasets/{id}/insights` | Computes facts and insights from the Parquet snapshots on demand: overview totals, trend (MoM/WoW), top contributors, composition, MAD outliers, funnel/win rate, data-quality caveats, and (for survey/feedback datasets with an LLM configured) text themes. Every fact and insight carries a `sourceTrace`. |
 
+## Implemented (Milestone 7)
+
+| Endpoint | Behavior |
+|---|---|
+| `POST /dashboards/generate` | Creates a dashboard + `generate_dashboard` job for a parsed dataset (`{workspaceId, datasetId, audience?, useCaseHint?, titleHint?}`). Editor+ role; 409 for unparsed datasets. |
+| `GET /dashboards?workspaceId=` | Lists workspace dashboards with visibility and version status. |
+| `GET /dashboards/{id}` | Dashboard with its current version's validated DashboardSpec and generation metadata (planner used, prompt version, template code). |
+
 ## Rules
 
 - All routes require authenticated workspace access unless explicitly public.

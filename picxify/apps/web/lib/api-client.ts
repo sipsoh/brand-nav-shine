@@ -234,6 +234,120 @@ export function getDatasetInsights(
   });
 }
 
+// --- DashboardSpec (rendered subset of packages/schemas/dashboard_spec.schema.json) ---
+
+export interface SpecWidget {
+  id: string;
+  type: string;
+  title: string;
+  subtitle?: string;
+  size?: string;
+  kpi?: {
+    value: string | number;
+    label: string;
+    changeLabel?: string | null;
+    direction?: "up" | "down" | "flat" | null;
+    sourceTrace?: SourceTrace;
+  } | null;
+  chart?: {
+    chartType: string;
+    querySpec: Record<string, unknown>;
+    takeaway?: string;
+    echartsOption?: Record<string, unknown>;
+    sourceTrace?: SourceTrace;
+  } | null;
+  insight?: SpecInsight | null;
+  markdown?: string | null;
+}
+
+export interface SpecInsight {
+  id: string;
+  headline: string;
+  detail: string;
+  severity: string;
+  confidence: number;
+  facts: { label: string; value: string | number | boolean; unit?: string | null; sourceTrace: SourceTrace }[];
+  recommendedAction?: string | null;
+  sourceTrace: SourceTrace;
+}
+
+export interface DashboardSpec {
+  version: string;
+  dashboard: {
+    title: string;
+    subtitle: string;
+    useCase: string;
+    audience: string;
+    theme: { name: string; tone: string };
+    generatedAt: string;
+  };
+  dataSources: {
+    datasetId: string;
+    tableId: string;
+    displayName: string;
+    rowCount: number;
+    columnCount: number;
+  }[];
+  assumptions: AssumptionSummary[];
+  sections: { id: string; title: string; subtitle?: string; layout: string; widgets: SpecWidget[] }[];
+  insights: SpecInsight[];
+  actions: { label: string; priority: string; rationale: string; sourceInsightId?: string | null }[];
+}
+
+export interface DashboardDetail {
+  dashboardId: string;
+  title: string;
+  subtitle: string | null;
+  visibility: string;
+  datasetId: string | null;
+  currentVersion: {
+    versionId: string;
+    versionNumber: number;
+    spec: DashboardSpec;
+    generationMetadata: Record<string, unknown>;
+  } | null;
+}
+
+export function generateDashboard(
+  token: string,
+  input: {
+    workspaceId: string;
+    datasetId: string;
+    audience?: string;
+    useCaseHint?: string;
+    titleHint?: string;
+  },
+): Promise<{ dashboardId: string; jobId: string; status: string }> {
+  return apiFetch("/dashboards/generate", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input),
+  });
+}
+
+export function getDashboard(token: string, dashboardId: string): Promise<DashboardDetail> {
+  return apiFetch<DashboardDetail>(`/dashboards/${dashboardId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export interface DashboardListItem {
+  dashboardId: string;
+  title: string;
+  visibility: string;
+  createdAt: string;
+  hasVersion: boolean;
+}
+
+export function listDashboards(
+  token: string,
+  workspaceId: string,
+): Promise<{ dashboards: DashboardListItem[] }> {
+  return apiFetch(`/dashboards?workspaceId=${workspaceId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 export async function putToPresignedUrl(uploadUrl: string, file: File): Promise<void> {
   const response = await fetch(uploadUrl, {
     method: "PUT",

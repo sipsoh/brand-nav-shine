@@ -55,7 +55,13 @@ class OpenAILLMClient:
         raise LLMUnavailable(str(last_error))
 
 
+def _configured() -> bool:
+    return bool(settings.openai_api_key) and settings.openai_api_key != "replace_me"
+
+
 def get_semantic_mapper_llm() -> LLMClient | None:
-    if not settings.openai_api_key or settings.openai_api_key == "replace_me":
-        return None
-    return OpenAILLMClient(model=settings.openai_model_text_analysis)
+    return OpenAILLMClient(model=settings.openai_model_text_analysis) if _configured() else None
+
+
+def get_planner_llm() -> LLMClient | None:
+    return OpenAILLMClient(model=settings.openai_model_planner) if _configured() else None

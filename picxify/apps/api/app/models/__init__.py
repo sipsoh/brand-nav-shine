@@ -1,4 +1,5 @@
 from app.models.assumption import Assumption, AssumptionSource, AssumptionStatus
+from app.models.dashboard import Dashboard, DashboardVersion, DashboardVisibility
 from app.models.dataset import DataQualityFinding, Dataset, DatasetColumn, DatasetTable
 from app.models.job import GenerationJob, JobStatus
 from app.models.upload import FileStatus, UploadedFile
@@ -21,4 +22,7 @@ __all__ = [
     "Assumption",
     "AssumptionStatus",
     "AssumptionSource",
+    "Dashboard",
+    "DashboardVersion",
+    "DashboardVisibility",
 ]
