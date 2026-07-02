@@ -80,7 +80,7 @@ def _run(
     table_qualities: list[float] = []
 
     for raw in raw_tables:
-        normalized = normalize_table(raw.dataframe)
+        normalized = normalize_table(raw.dataframe, table_name=raw.name)
         _progress(db, job, *PROGRESS_STEPS[2])
         profile = profile_table(normalized.dataframe, normalized.type_hints)
 
@@ -120,7 +120,7 @@ def _run(
         db.flush()
 
         penalty = profile.quality_penalty
-        for note in normalized.notes:
+        for note in [*raw.notes, *normalized.notes]:
             if note.severity != "info":
                 penalty += 0.05
             db.add(

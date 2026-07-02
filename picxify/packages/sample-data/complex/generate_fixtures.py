@@ -314,6 +314,96 @@ def pivot_wide_report() -> None:
         pd.DataFrame(rows).to_excel(writer, sheet_name="Revenue by Region", index=False)
 
 
+def messy_ops_report() -> None:
+    """The classic hand-exported mess: two banner rows above the table, the
+    header on sheet row 4, currency strings with accounting negatives, a blank
+    header cell, a duplicate column name, a Grand Total row, and a loose
+    footnote two blank rows below the table."""
+    sites = ["Northgate", "Riverside", "Elm Plaza", "Harbor Point", "Summit"]
+    categories = ["HVAC", "Plumbing", "Electrical", "Janitorial", "Landscaping"]
+    header = ["Work Order", "Site", "Category", "Cost", "Opened", "Status", "", "Cost"]
+    grid: list[list] = [
+        ["ACME FACILITIES — WORK ORDER EXPORT"] + [None] * 7,
+        ["Generated 2026-06-30 by ops-suite v4.2"] + [None] * 7,
+        [None] * 8,
+        header,
+    ]
+    total = 0.0
+    start = date(2026, 1, 5)
+    for i in range(240):
+        cost = random.choice([180, 240, 420, 660, 950, 1_400]) * (0.7 + random.random() * 0.8)
+        refund = random.random() < 0.04
+        total += -cost if refund else cost
+        grid.append(
+            [
+                f"WO-{7000 + i}",
+                random.choice(sites),
+                random.choice(categories),
+                f"(${cost:,.2f})" if refund else money(cost),
+                mixed_date(start + timedelta(days=random.randrange(170)), random.randrange(3)),
+                random.choices(["Closed", "Open", "In Progress"], [0.7, 0.18, 0.12])[0],
+                random.choice(["Yes", None, None]),
+                round(cost, 2),
+            ]
+        )
+    grid.append(["Grand Total", None, None, money(total), None, None, None, None])
+    grid.append([None] * 8)
+    grid.append([None] * 8)
+    grid.append(["Prepared by the facilities team — internal use only"] + [None] * 7)
+    with pd.ExcelWriter(OUT / "messy_ops_report.xlsx", engine="openpyxl") as writer:
+        pd.DataFrame(grid).to_excel(writer, sheet_name="Export", index=False, header=False)
+
+
+def scattered_report() -> None:
+    """Several tables scattered on single sheets: a small KPI block above the
+    real table (two blank rows apart), and two tables side by side."""
+    programs = ["Food Bank", "Youth Sports", "Adult Education", "Health Clinic"]
+    channels = ["Online", "Mail", "Event", "Corporate"]
+    start = date(2026, 1, 10)
+    main: list[list] = [["Date", "Program", "Channel", "Amount"]]
+    for _ in range(300):
+        main.append(
+            [
+                (start + timedelta(days=random.randrange(160))).isoformat(),
+                random.choice(programs),
+                random.choice(channels),
+                money(random.choice([25, 50, 100, 250, 500]) * (0.8 + random.random() * 0.6)),
+            ]
+        )
+    kpi_block = [["Metric", "Value"], ["Report Year", 2026], ["Prepared By", "Development Office"]]
+    sheet1 = kpi_block + [[None, None], [None, None]] + main
+
+    left = [["Team", "Wins"]] + [[t, random.randrange(3, 20)] for t in ["North", "South", "East", "West", "Central", "Metro"]]
+    right = [["Month", "Sessions"]] + [
+        [date(2026, m, 1).strftime("%b %Y"), random.randrange(800, 2200)] for m in range(1, 7)
+    ]
+    sheet2 = [
+        (left[i] if i < len(left) else [None, None]) + [None] + (right[i] if i < len(right) else [None, None])
+        for i in range(max(len(left), len(right)))
+    ]
+    with pd.ExcelWriter(OUT / "scattered_report.xlsx", engine="openpyxl") as writer:
+        pd.DataFrame(sheet1).to_excel(writer, sheet_name="Dashboard Data", index=False, header=False)
+        pd.DataFrame(sheet2).to_excel(writer, sheet_name="Side By Side", index=False, header=False)
+
+
+def euro_sales_csv() -> None:
+    """A European export: semicolon delimiter, day-first dates, decimal commas
+    with dot thousands separators, currency symbols, non-English headers."""
+    kunden = ["Müller GmbH", "Schneider AG", "Fischer & Söhne", "Weber KG", "Becker SE"]
+    regionen = ["Nord", "Süd", "Ost", "West"]
+    lines = ["Datum;Kunde;Region;Umsatz;Menge"]
+    start = date(2026, 1, 13)
+    for _ in range(220):
+        day = start + timedelta(days=random.randrange(160))
+        amount = random.choice([950, 1_800, 3_600, 7_200, 12_500]) * (0.8 + random.random() * 0.5)
+        euro = f"€ {amount:,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
+        lines.append(
+            f"{day.strftime('%d.%m.%Y')};{random.choice(kunden)};"
+            f"{random.choice(regionen)};{euro};{random.randrange(1, 40)}"
+        )
+    (OUT / "euro_sales.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 if __name__ == "__main__":
     sales_pipeline()
     ecommerce_orders()
@@ -325,4 +415,7 @@ if __name__ == "__main__":
     real_estate_portfolio()
     restaurant_pos()
     pivot_wide_report()
+    messy_ops_report()
+    scattered_report()
+    euro_sales_csv()
     print("fixtures written to", OUT)

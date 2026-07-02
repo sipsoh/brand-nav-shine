@@ -11,14 +11,14 @@ import pandas as pd
 
 from app.services.profiler import json_safe
 
-MEASURE_PRIORITY = ["revenue", "cost", "conversion", "engagement", "rating", "quantity",
-                    "duration", "other"]
+MEASURE_PRIORITY = ["revenue", "cost", "money", "conversion", "engagement", "rating",
+                    "quantity", "duration", "other"]
 DIMENSION_PRIORITY = ["campaign", "channel", "stage", "status", "segment", "region", "owner",
                       "account", "customer", "other"]
 # Measures whose sums are business-meaningful. Without one of these, analytics
 # switch to record counts (e.g. tickets per month) — summing a duration, a
 # rating, or an arbitrary numeric column produces impressive-looking nonsense.
-STRONG_SEMANTICS = {"revenue", "cost", "conversion", "engagement", "quantity"}
+STRONG_SEMANTICS = {"revenue", "cost", "money", "conversion", "engagement", "quantity"}
 # Measures that are only meaningful as averages.
 AVERAGE_SEMANTICS = {"duration", "rating"}
 TOP_CONTRIBUTOR_THRESHOLD = 0.30

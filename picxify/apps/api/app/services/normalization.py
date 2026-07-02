@@ -14,6 +14,12 @@ FOOTER_PATTERN = re.compile(r"^\s*(grand\s+)?(sub)?total[s]?\b", re.IGNORECASE)
 CURRENCY_PATTERN = re.compile(r"^\s*(-?[$€£]\s*[\d,]+(\.\d+)?|\(\s*[$€£]?\s*[\d,]+(\.\d+)?\s*\))\s*$")
 PERCENT_PATTERN = re.compile(r"^\s*-?[\d,]+(\.\d+)?\s*%\s*$")
 NUMERIC_PATTERN = re.compile(r"^\s*-?[\d,]+(\.\d+)?\s*$")
+# European style: dot as thousands separator, comma as decimal ("1.234,56"),
+# optionally with a currency symbol. Requires a comma-decimal or a dot-group
+# so it cannot swallow plain US-style numbers.
+EURO_NUMERIC_PATTERN = re.compile(
+    r"^\s*-?[$€£]?\s*(\d{1,3}(\.\d{3})+(,\d+)?|\d+,\d+)\s*$"
+)
 
 COERCION_THRESHOLD = 0.9  # fraction of non-null values that must parse
 
@@ -46,7 +52,7 @@ def snake_case(name: str) -> str:
     return cleaned or "column"
 
 
-def normalize_table(dataframe: pd.DataFrame) -> NormalizedTable:
+def normalize_table(dataframe: pd.DataFrame, table_name: str | None = None) -> NormalizedTable:
     df = dataframe.copy()
     notes: list[TransformNote] = []
     type_hints: dict[str, str] = {}
@@ -57,6 +63,7 @@ def normalize_table(dataframe: pd.DataFrame) -> NormalizedTable:
     df = _trim_strings(df)
     df = _coerce_numeric_strings(df, notes, type_hints)
     df = _coerce_dates(df, notes)
+    df = _unpivot_wide_periods(df, notes, table_name)
     df = _stringify_mixed_columns(df, notes)
 
     duplicate_rows = int(df.duplicated().sum())
@@ -173,11 +180,16 @@ def _coerce_numeric_strings(
         currency_ratio = strings.map(lambda v: bool(CURRENCY_PATTERN.match(v))).mean()
         percent_ratio = strings.map(lambda v: bool(PERCENT_PATTERN.match(v))).mean()
         numeric_ratio = strings.map(lambda v: bool(NUMERIC_PATTERN.match(v))).mean()
+        euro_ratio = strings.map(lambda v: bool(EURO_NUMERIC_PATTERN.match(v))).mean()
+        euro_style = euro_ratio >= COERCION_THRESHOLD and euro_ratio > numeric_ratio
 
         def to_number(value):
             if not isinstance(value, str):
                 return value
             negative = bool(re.match(r"^\s*\(.*\)\s*$", value))  # accounting negatives
+            if euro_style:
+                # "1.234,56" -> "1234.56"
+                value = value.replace(".", "").replace(",", ".")
             cleaned = re.sub(r"[$€£,%\s()]", "", value)
             if cleaned in {"", "-"}:
                 return None
@@ -188,6 +200,25 @@ def _coerce_numeric_strings(
                 # headers, typos) become nulls rather than crashing the job.
                 return None
             return -number if negative else number
+
+        if euro_style:
+            has_symbol = strings.map(lambda v: bool(re.search(r"[$€£]", v))).mean() >= 0.5
+            df[column] = df[column].map(to_number)
+            if has_symbol:
+                type_hints[column] = "currency"
+            notes.append(
+                TransformNote(
+                    finding_type="type_converted",
+                    severity="info",
+                    message=(
+                        f"Converted '{column}' from European-formatted text "
+                        "(1.234,56) to numbers."
+                    ),
+                    column=column,
+                    meta={"to": "currency" if has_symbol else "number", "style": "european"},
+                )
+            )
+            continue
 
         if currency_ratio >= COERCION_THRESHOLD:
             df[column] = df[column].map(to_number)
@@ -227,6 +258,86 @@ def _coerce_numeric_strings(
     return df
 
 
+PERIOD_HEADER = re.compile(
+    r"^\s*(?:(?P<year_only>(19|20)\d{2})|"
+    r"q(?P<quarter>[1-4])\s*[-/ ]?\s*(?P<q_year>(19|20)\d{2})|"
+    r"(?P<month>jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-/ ,]+(?P<m_year>(19|20)\d{2})|"
+    r"(?P<iso_year>(19|20)\d{2})-(?P<iso_month>0[1-9]|1[0-2])(?:-\d{2})?)\s*$",
+    re.IGNORECASE,
+)
+MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+MIN_PERIOD_COLUMNS = 3
+
+
+def _parse_period_header(name: str):
+    """'Jan 2026' / '2026-01' / 'Q1 2026' / '2026' -> period start date."""
+    match = PERIOD_HEADER.match(str(name))
+    if not match:
+        return None
+    groups = match.groupdict()
+    if groups["year_only"]:
+        return pd.Timestamp(int(groups["year_only"]), 1, 1)
+    if groups["quarter"]:
+        return pd.Timestamp(int(groups["q_year"]), (int(groups["quarter"]) - 1) * 3 + 1, 1)
+    if groups["month"]:
+        return pd.Timestamp(int(groups["m_year"]), MONTHS.index(groups["month"].lower()) + 1, 1)
+    return pd.Timestamp(int(groups["iso_year"]), int(groups["iso_month"]), 1)
+
+
+def _unpivot_wide_periods(
+    df: pd.DataFrame, notes: list[TransformNote], table_name: str | None
+) -> pd.DataFrame:
+    """Crosstab reports ('Region | Jan 2026 | Feb 2026 | ...') reshape into
+    long form so trends and breakdowns work. Only fires when the period
+    columns clearly dominate and hold numbers."""
+    periods = {c: _parse_period_header(c) for c in df.columns}
+    period_columns = [c for c, parsed in periods.items() if parsed is not None]
+    id_columns = [c for c in df.columns if c not in period_columns]
+    if len(period_columns) < MIN_PERIOD_COLUMNS or len(id_columns) > 3:
+        return df
+    numeric_columns = sum(
+        1 for c in period_columns if pd.api.types.is_numeric_dtype(df[c])
+    )
+    if numeric_columns < len(period_columns) * 0.8:
+        return df
+
+    value_name = _measure_name(table_name)
+    melted = df.melt(
+        id_vars=id_columns,
+        value_vars=period_columns,
+        var_name="Period",
+        value_name=value_name,
+    )
+    melted["Period"] = melted["Period"].map(lambda c: periods[c])
+    melted = melted.dropna(subset=[value_name]).reset_index(drop=True)
+    notes.append(
+        TransformNote(
+            finding_type="wide_periods_unpivoted",
+            severity="info",
+            message=(
+                f"Reshaped {len(period_columns)} period column(s) "
+                f"({period_columns[0]} … {period_columns[-1]}) into rows so "
+                "trends can be analyzed."
+            ),
+            meta={
+                "periodColumns": [str(c) for c in period_columns],
+                "valueColumn": value_name,
+            },
+        )
+    )
+    return melted
+
+
+def _measure_name(table_name: str | None) -> str:
+    """'Revenue by Region' -> 'Revenue'; anything unhelpful -> 'Value'."""
+    if table_name and " by " in table_name.lower():
+        lowered = table_name.lower()
+        candidate = table_name[: lowered.index(" by ")].strip()
+        if candidate and len(candidate) <= 40:
+            return candidate
+    return "Value"
+
+
 def _stringify_mixed_columns(df: pd.DataFrame, notes: list[TransformNote]) -> pd.DataFrame:
     """Columns still holding a mix of Python types after coercion (e.g. numbers
     plus the odd 'Yes') become consistent text. Mixed columns cannot be
@@ -237,7 +348,13 @@ def _stringify_mixed_columns(df: pd.DataFrame, notes: list[TransformNote]) -> pd
         non_null = df[column].dropna()
         if non_null.empty:
             continue
-        kinds = {type(value).__name__ for value in non_null}
+        # int/float mixes are numbers, not "mixed types" — grid-based Excel
+        # extraction leaves them as objects until infer_objects runs.
+        kinds = {
+            "number" if isinstance(value, (int, float)) and not isinstance(value, bool)
+            else type(value).__name__
+            for value in non_null
+        }
         if len(kinds) > 1:
             df[column] = df[column].map(lambda v: None if pd.isna(v) else str(v))
             notes.append(
@@ -273,20 +390,29 @@ def _coerce_dates(df: pd.DataFrame, notes: list[TransformNote]) -> pd.DataFrame:
         if looks_datey < COERCION_THRESHOLD:
             continue
         parsed = pd.to_datetime(values, errors="coerce", format="mixed", dayfirst=False)
+        dayfirst = False
+        # European day-first dates ("13.02.2026"): retry when month-first fails.
+        retry = pd.to_datetime(values, errors="coerce", format="mixed", dayfirst=True)
+        if retry.notna().mean() > parsed.notna().mean():
+            parsed, dayfirst = retry, True
         parse_ratio = parsed.notna().mean()
         if parse_ratio >= COERCION_THRESHOLD:
-            df[column] = pd.to_datetime(df[column], errors="coerce", format="mixed")
+            df[column] = pd.to_datetime(
+                df[column], errors="coerce", format="mixed", dayfirst=dayfirst
+            )
             failed = int(len(values) - parsed.notna().sum())
             notes.append(
                 TransformNote(
                     finding_type="dates_parsed",
                     severity="info" if failed == 0 else "warning",
                     message=(
-                        f"Parsed '{column}' as dates."
+                        f"Parsed '{column}' as dates"
+                        + (" (day-first format)" if dayfirst else "")
+                        + "."
                         + (f" {failed} value(s) could not be parsed." if failed else "")
                     ),
                     column=column,
-                    meta={"unparsed": failed},
+                    meta={"unparsed": failed, "dayfirst": dayfirst},
                 )
             )
     return df

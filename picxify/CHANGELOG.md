@@ -1,5 +1,36 @@
 # Changelog
 
+## Messy-data engine + per-widget provenance (2026-07-02)
+
+Every data point on the dashboard now carries an always-visible source line
+("⌕ Export · sum(Cost) grouped by Site · 240 rows") that opens the full trace
+(table, calculation, columns, filters, row count, generated-by). Applied to KPI
+tiles and chart cards in both the web renderer and the eval HTML renderer;
+source lines are kept in print output.
+
+The ingestion engine now reads messy, scattered real-world files:
+
+- **Structure detection for Excel**: sheets are read as raw cell grids; title
+  banners above the table are skipped, the true header row is detected (row 1
+  no longer assumed), merged two-row headers are flattened ("Q1 Revenue"),
+  blank header cells get names, and every decision is recorded as a
+  data-quality finding.
+- **Scattered tables**: several tables on one sheet (stacked blocks and
+  side-by-side pairs) are split into separate tables ("Sheet (block 2)"); tiny
+  loose-cell blocks are skipped with a note.
+- **Crosstab unpivot**: wide period columns (Jan 2026 … Dec 2026, quarters,
+  years) melt into long form so trends and MoM math work on pivot-shaped
+  exports; the value column is named from the sheet ("Revenue by Region" →
+  Revenue).
+- **International data**: European number formats ("€ 1.234,56"), day-first
+  dates (13.02.2026), semicolon CSVs, and non-UTF-8 encodings (latin-1/cp1252/
+  utf-16) are handled; non-English money labels (Umsatz, ventas, receita …)
+  map to revenue/cost, and any column whose values carry a currency symbol is
+  treated as a money measure even with an unrecognized name.
+- **Legacy .xls** supported (xlrd).
+- 3 new torture fixtures (banner+totals+currency mess, scattered blocks, euro
+  CSV) and an upgraded pivot expectation: 13/13 evals; 128 tests.
+
 ## Data-viz design system v5 (2026-07-02)
 
 Rebuilt the dashboard visual language on a validated data-viz method (form-first,

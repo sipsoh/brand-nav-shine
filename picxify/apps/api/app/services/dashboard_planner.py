@@ -135,7 +135,7 @@ def _columns_by_role(ctx: PlanningContext, role: str) -> list[ColumnCtx]:
 
 # Mirrors insight_engine.STRONG_SEMANTICS: measures whose sums mean something.
 # Ratings and durations are explicitly absent — they are averaged, never summed.
-STRONG_MEASURE_PRIORITY = ["revenue", "cost", "conversion", "engagement", "quantity"]
+STRONG_MEASURE_PRIORITY = ["revenue", "cost", "money", "conversion", "engagement", "quantity"]
 
 
 def _primary_measure(ctx: PlanningContext) -> ColumnCtx | None:

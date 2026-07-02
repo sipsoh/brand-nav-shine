@@ -1,0 +1,221 @@
+Datum;Kunde;Region;Umsatz;Menge
+15.03.2026;Fischer & Söhne;West;€ 2.242,12;14
+28.05.2026;Müller GmbH;Süd;€ 4.567,02;27
+13.04.2026;Fischer & Söhne;Süd;€ 12.177,50;13
+21.03.2026;Müller GmbH;Nord;€ 6.173,62;3
+17.01.2026;Weber KG;Nord;€ 1.022,65;18
+18.04.2026;Schneider AG;Nord;€ 3.202,30;30
+17.03.2026;Müller GmbH;Süd;€ 2.020,25;1
+02.02.2026;Schneider AG;West;€ 1.447,78;20
+23.03.2026;Müller GmbH;Süd;€ 1.191,41;17
+10.02.2026;Weber KG;West;€ 1.047,18;36
+05.02.2026;Weber KG;Süd;€ 14.252,75;23
+17.03.2026;Weber KG;West;€ 8.183,49;37
+01.05.2026;Weber KG;West;€ 1.119,50;9
+11.03.2026;Weber KG;West;€ 15.646,27;39
+06.04.2026;Schneider AG;Nord;€ 10.182,33;26
+28.01.2026;Schneider AG;Ost;€ 10.632,80;10
+17.06.2026;Weber KG;Süd;€ 1.031,71;31
+05.03.2026;Fischer & Söhne;West;€ 1.936,91;25
+04.04.2026;Müller GmbH;Nord;€ 1.587,73;16
+05.05.2026;Weber KG;Ost;€ 1.087,41;29
+24.01.2026;Fischer & Söhne;Nord;€ 13.349,49;37
+03.05.2026;Becker SE;West;€ 2.105,94;4
+06.06.2026;Weber KG;West;€ 4.081,44;4
+22.01.2026;Müller GmbH;Ost;€ 1.065,10;10
+12.03.2026;Schneider AG;Ost;€ 10.692,20;29
+23.04.2026;Becker SE;Süd;€ 932,07;6
+18.06.2026;Schneider AG;Süd;€ 4.380,10;1
+18.02.2026;Becker SE;Nord;€ 835,45;34
+06.05.2026;Müller GmbH;Nord;€ 3.176,19;12
+21.05.2026;Schneider AG;Nord;€ 7.126,98;2
+01.06.2026;Fischer & Söhne;Süd;€ 4.427,86;22
+07.04.2026;Weber KG;Ost;€ 3.915,46;29
+17.05.2026;Schneider AG;West;€ 5.899,38;1
+07.02.2026;Weber KG;Süd;€ 7.580,49;3
+29.05.2026;Fischer & Söhne;Nord;€ 2.108,44;30
+18.05.2026;Weber KG;Nord;€ 2.194,92;25
+27.05.2026;Fischer & Söhne;West;€ 1.577,15;34
+13.03.2026;Fischer & Söhne;Süd;€ 14.664,79;8
+10.06.2026;Fischer & Söhne;West;€ 14.065,44;4
+09.04.2026;Müller GmbH;Nord;€ 6.896,97;23
+07.06.2026;Müller GmbH;Süd;€ 4.039,45;3
+02.02.2026;Schneider AG;West;€ 1.213,16;28
+10.05.2026;Becker SE;Ost;€ 850,12;10
+19.01.2026;Weber KG;West;€ 1.158,33;38
+27.02.2026;Becker SE;Nord;€ 881,35;27
+02.05.2026;Weber KG;Süd;€ 16.062,09;31
+16.06.2026;Schneider AG;Ost;€ 2.264,76;7
+24.03.2026;Weber KG;Ost;€ 8.056,10;1
+18.06.2026;Becker SE;West;€ 6.062,84;13
+16.06.2026;Müller GmbH;Ost;€ 2.167,37;14
+06.05.2026;Müller GmbH;Ost;€ 1.692,96;23
+23.02.2026;Weber KG;Süd;€ 3.611,86;6
+07.05.2026;Weber KG;Ost;€ 3.525,74;35
+30.04.2026;Fischer & Söhne;Süd;€ 1.570,88;18
+28.03.2026;Müller GmbH;Nord;€ 5.820,55;30
+11.04.2026;Fischer & Söhne;Ost;€ 10.538,67;25
+22.02.2026;Müller GmbH;Ost;€ 1.708,89;36
+21.05.2026;Fischer & Söhne;Ost;€ 1.734,03;24
+31.03.2026;Becker SE;Nord;€ 2.219,37;32
+24.03.2026;Müller GmbH;Nord;€ 3.309,96;12
+01.05.2026;Weber KG;Süd;€ 11.741,61;33
+20.06.2026;Becker SE;West;€ 3.379,19;37
+06.02.2026;Schneider AG;Nord;€ 16.189,02;19
+24.05.2026;Müller GmbH;Nord;€ 6.727,72;13
+03.02.2026;Fischer & Söhne;Süd;€ 8.708,52;15
+28.02.2026;Fischer & Söhne;Nord;€ 6.084,93;7
+16.05.2026;Weber KG;Nord;€ 842,13;4
+09.06.2026;Schneider AG;West;€ 8.682,18;1
+11.06.2026;Fischer & Söhne;West;€ 13.854,33;14
+17.02.2026;Müller GmbH;Ost;€ 8.152,30;12
+04.02.2026;Becker SE;West;€ 7.881,67;37
+24.01.2026;Schneider AG;West;€ 1.628,60;23
+10.03.2026;Fischer & Söhne;Süd;€ 1.846,02;33
+23.02.2026;Weber KG;Ost;€ 8.890,64;9
+08.06.2026;Becker SE;West;€ 1.460,71;23
+30.05.2026;Weber KG;West;€ 1.214,10;13
+20.01.2026;Schneider AG;Süd;€ 3.255,71;30
+24.04.2026;Weber KG;Nord;€ 1.549,03;32
+17.05.2026;Schneider AG;West;€ 14.655,31;16
+19.04.2026;Müller GmbH;West;€ 10.273,30;23
+16.02.2026;Müller GmbH;West;€ 1.193,47;1
+02.06.2026;Becker SE;Süd;€ 2.202,48;12
+05.05.2026;Weber KG;West;€ 945,15;38
+16.06.2026;Müller GmbH;Süd;€ 10.315,48;33
+24.02.2026;Becker SE;West;€ 3.775,91;21
+24.05.2026;Becker SE;West;€ 909,45;15
+21.01.2026;Schneider AG;West;€ 774,48;26
+09.02.2026;Becker SE;Ost;€ 13.929,12;38
+23.04.2026;Schneider AG;Süd;€ 3.745,39;36
+03.06.2026;Weber KG;Nord;€ 16.128,10;36
+08.03.2026;Müller GmbH;Ost;€ 3.672,18;25
+02.05.2026;Fischer & Söhne;West;€ 2.165,68;38
+19.04.2026;Schneider AG;Ost;€ 13.393,65;6
+05.06.2026;Müller GmbH;Süd;€ 7.913,53;21
+10.04.2026;Müller GmbH;Nord;€ 6.472,90;20
+08.02.2026;Fischer & Söhne;Nord;€ 5.906,67;12
+21.03.2026;Müller GmbH;Ost;€ 4.334,62;35
+26.02.2026;Schneider AG;Ost;€ 6.645,88;24
+04.04.2026;Schneider AG;Süd;€ 3.951,58;5
+09.02.2026;Fischer & Söhne;Nord;€ 11.437,68;14
+06.02.2026;Schneider AG;Süd;€ 3.655,81;12
+14.05.2026;Schneider AG;West;€ 929,47;24
+13.04.2026;Schneider AG;Ost;€ 6.177,13;39
+18.01.2026;Schneider AG;Süd;€ 9.269,48;9
+26.03.2026;Müller GmbH;West;€ 1.150,12;19
+21.04.2026;Schneider AG;West;€ 3.399,36;1
+12.06.2026;Weber KG;Ost;€ 1.733,46;32
+04.02.2026;Weber KG;Ost;€ 1.105,49;8
+02.06.2026;Becker SE;Ost;€ 7.006,30;8
+17.06.2026;Becker SE;Süd;€ 2.089,86;15
+17.05.2026;Müller GmbH;West;€ 3.965,78;5
+05.04.2026;Fischer & Söhne;Nord;€ 3.015,88;39
+25.02.2026;Müller GmbH;Nord;€ 11.766,85;21
+10.04.2026;Müller GmbH;Nord;€ 3.532,62;26
+02.02.2026;Müller GmbH;Nord;€ 10.202,96;26
+09.04.2026;Weber KG;Ost;€ 1.580,29;22
+27.05.2026;Fischer & Söhne;Nord;€ 4.320,27;29
+23.01.2026;Weber KG;Nord;€ 1.541,72;28
+17.02.2026;Müller GmbH;Süd;€ 6.918,21;39
+14.04.2026;Fischer & Söhne;Süd;€ 2.216,31;23
+29.03.2026;Fischer & Söhne;West;€ 6.557,60;38
+04.02.2026;Müller GmbH;Nord;€ 3.317,06;8
+13.01.2026;Schneider AG;Nord;€ 8.142,51;16
+20.02.2026;Schneider AG;Nord;€ 785,84;28
+07.02.2026;Schneider AG;Nord;€ 11.868,93;11
+23.03.2026;Fischer & Söhne;Nord;€ 14.953,60;18
+12.03.2026;Müller GmbH;Ost;€ 4.189,67;27
+18.04.2026;Weber KG;Süd;€ 10.238,72;28
+06.05.2026;Schneider AG;Nord;€ 3.667,58;21
+16.02.2026;Fischer & Söhne;Nord;€ 872,45;14
+17.04.2026;Müller GmbH;West;€ 5.992,08;32
+19.05.2026;Schneider AG;Ost;€ 1.191,32;23
+03.05.2026;Becker SE;Süd;€ 4.581,17;35
+02.04.2026;Müller GmbH;Nord;€ 9.339,92;33
+13.02.2026;Weber KG;Nord;€ 1.059,78;6
+03.05.2026;Schneider AG;West;€ 12.105,01;23
+08.05.2026;Fischer & Söhne;Süd;€ 1.153,48;20
+11.04.2026;Schneider AG;Süd;€ 6.387,07;14
+08.03.2026;Müller GmbH;Nord;€ 7.119,87;27
+11.03.2026;Müller GmbH;Ost;€ 6.742,76;5
+31.03.2026;Becker SE;Ost;€ 9.108,99;22
+22.04.2026;Fischer & Söhne;Süd;€ 10.361,69;6
+06.02.2026;Müller GmbH;Süd;€ 876,76;2
+01.04.2026;Becker SE;West;€ 3.823,04;16
+12.04.2026;Müller GmbH;Süd;€ 4.379,47;22
+04.03.2026;Schneider AG;Süd;€ 8.396,86;31
+22.04.2026;Weber KG;Süd;€ 1.508,44;18
+17.01.2026;Weber KG;Süd;€ 7.939,21;36
+09.04.2026;Becker SE;West;€ 6.559,97;1
+13.05.2026;Müller GmbH;Süd;€ 2.044,16;25
+04.02.2026;Fischer & Söhne;West;€ 3.695,78;3
+23.04.2026;Becker SE;Ost;€ 12.659,19;31
+28.05.2026;Weber KG;Ost;€ 1.208,01;1
+23.01.2026;Fischer & Söhne;Ost;€ 2.256,23;25
+14.04.2026;Fischer & Söhne;Nord;€ 2.130,13;6
+27.03.2026;Müller GmbH;West;€ 3.974,49;7
+16.04.2026;Weber KG;Süd;€ 13.426,26;37
+19.04.2026;Müller GmbH;Nord;€ 12.960,27;5
+28.03.2026;Schneider AG;West;€ 4.247,76;20
+08.05.2026;Becker SE;West;€ 795,27;39
+16.03.2026;Weber KG;West;€ 1.628,22;21
+21.06.2026;Schneider AG;West;€ 15.807,51;14
+31.01.2026;Weber KG;Ost;€ 873,73;25
+08.05.2026;Müller GmbH;West;€ 1.919,16;14
+13.04.2026;Schneider AG;West;€ 1.164,98;31
+01.03.2026;Fischer & Söhne;Ost;€ 9.298,71;19
+11.02.2026;Müller GmbH;West;€ 2.211,71;20
+06.02.2026;Weber KG;Süd;€ 7.437,44;25
+20.05.2026;Müller GmbH;Ost;€ 15.797,71;2
+12.04.2026;Schneider AG;Nord;€ 1.015,97;12
+23.01.2026;Weber KG;Süd;€ 15.939,64;33
+06.04.2026;Becker SE;West;€ 1.029,75;14
+06.04.2026;Schneider AG;West;€ 819,99;7
+18.03.2026;Fischer & Söhne;West;€ 2.282,09;12
+18.02.2026;Fischer & Söhne;Ost;€ 2.286,95;5
+28.01.2026;Müller GmbH;Nord;€ 7.686,33;35
+18.01.2026;Fischer & Söhne;West;€ 7.183,98;16
+27.05.2026;Becker SE;Nord;€ 1.063,25;39
+05.05.2026;Schneider AG;Nord;€ 8.277,27;27
+07.03.2026;Weber KG;West;€ 6.435,30;31
+04.04.2026;Müller GmbH;Nord;€ 3.722,36;15
+19.04.2026;Weber KG;Süd;€ 780,29;28
+06.03.2026;Schneider AG;West;€ 3.852,25;22
+03.04.2026;Fischer & Söhne;Ost;€ 13.826,02;20
+26.01.2026;Weber KG;West;€ 1.027,17;26
+09.02.2026;Becker SE;West;€ 5.977,45;5
+18.06.2026;Müller GmbH;West;€ 16.075,21;10
+31.01.2026;Fischer & Söhne;Nord;€ 1.116,20;18
+22.03.2026;Becker SE;West;€ 8.898,49;34
+11.04.2026;Müller GmbH;Ost;€ 3.571,01;24
+18.06.2026;Becker SE;Nord;€ 3.527,25;35
+02.02.2026;Müller GmbH;Nord;€ 12.193,53;14
+18.04.2026;Weber KG;West;€ 7.918,42;24
+09.02.2026;Schneider AG;Nord;€ 7.145,37;2
+09.02.2026;Schneider AG;West;€ 8.655,66;9
+28.03.2026;Weber KG;Nord;€ 11.459,57;33
+23.05.2026;Schneider AG;West;€ 4.494,72;17
+09.04.2026;Schneider AG;Ost;€ 12.648,92;10
+27.02.2026;Weber KG;Süd;€ 1.138,51;12
+20.06.2026;Weber KG;West;€ 7.712,56;17
+24.03.2026;Schneider AG;Süd;€ 14.718,87;7
+15.04.2026;Weber KG;West;€ 14.483,69;37
+09.03.2026;Müller GmbH;Nord;€ 7.341,89;39
+14.06.2026;Fischer & Söhne;Ost;€ 12.968,93;36
+27.05.2026;Becker SE;West;€ 11.912,79;7
+26.02.2026;Weber KG;Ost;€ 4.216,86;34
+26.04.2026;Becker SE;Nord;€ 4.429,54;16
+16.06.2026;Müller GmbH;Süd;€ 6.142,05;35
+15.05.2026;Becker SE;Ost;€ 12.476,27;24
+21.06.2026;Weber KG;Süd;€ 1.646,96;13
+16.03.2026;Weber KG;Nord;€ 11.805,21;20
+01.02.2026;Weber KG;Ost;€ 2.068,53;21
+19.04.2026;Fischer & Söhne;Süd;€ 14.673,95;25
+15.06.2026;Schneider AG;Ost;€ 13.932,52;18
+13.03.2026;Schneider AG;West;€ 1.197,69;1
+26.05.2026;Fischer & Söhne;Nord;€ 1.086,39;8
+26.02.2026;Schneider AG;Nord;€ 2.897,35;1
+23.03.2026;Fischer & Söhne;Süd;€ 3.194,03;31
+16.01.2026;Müller GmbH;Süd;€ 3.847,81;24
+25.01.2026;Schneider AG;Süd;€ 7.968,37;19

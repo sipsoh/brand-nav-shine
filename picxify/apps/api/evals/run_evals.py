@@ -79,11 +79,35 @@ EXPECTATIONS = {
         "chart_aggregations_forbidden": [],
     },
     "pivot_wide_report.xlsx": {
-        # Wrong-shape data: the bar is graceful handling — parse, valid spec,
-        # honest row count. No use-case or KPI demands.
+        # Pivot-shaped data (months as columns) is unpivoted to long form, so
+        # a real revenue trend must come out the other side.
         "use_case": None,
         "primary_sheet": "Revenue by Region",
-        "required_kpi_tokens": ["rows analyzed"],
+        "required_kpi_tokens": ["total revenue"],
+        "chart_aggregations_forbidden": [],
+    },
+    "messy_ops_report.xlsx": {
+        # Banner rows above the table, header on sheet row 4, currency strings
+        # with accounting negatives, a blank + a duplicate header, a Grand
+        # Total row, and a loose footnote block. Must still read cleanly.
+        "use_case": None,
+        "primary_sheet": "Export",
+        "required_kpi_tokens": ["total cost"],
+        "chart_aggregations_forbidden": [],
+    },
+    "scattered_report.xlsx": {
+        # Several tables scattered per sheet: the KPI block above the real
+        # table must not poison it; the 300-row donations table wins.
+        "use_case": None,
+        "primary_sheet": "Dashboard Data (block 2)",
+        "required_kpi_tokens": ["total amount"],
+        "chart_aggregations_forbidden": [],
+    },
+    "euro_sales.csv": {
+        # Semicolon CSV, day-first dates, "€ 1.234,56" numbers, German headers.
+        "use_case": None,
+        "primary_sheet": "euro_sales",
+        "required_kpi_tokens": ["total umsatz"],
         "chart_aggregations_forbidden": [],
     },
 }

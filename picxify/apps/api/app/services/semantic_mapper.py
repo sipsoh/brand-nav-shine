@@ -64,8 +64,13 @@ NAME_RULES: list[tuple[str, str, set[str] | None]] = [
     # Per-unit prices/rates precede revenue so 'Unit Price' never becomes the
     # summable primary measure over an actual Revenue column.
     ("other", r"unit_price|price_per|unit_cost|rate_per|per_unit", {"integer", "float", "currency"}),
-    ("revenue", r"revenue|deal_amount|amount|sales|income|arr|mrr|price|value|(^|_)rents?($|_)|donation", {"integer", "float", "currency"}),
-    ("cost", r"spend|cost|budget|expense|cac|cpa|discount", {"integer", "float", "currency"}),
+    # Includes common non-English money labels (Umsatz/ventas/receita/...).
+    ("revenue", r"revenue|deal_amount|amount|sales|income|arr|mrr|price|value|(^|_)rents?($|_)|donation"
+                r"|umsatz|ventas|ingresos|ventes|chiffre|receita|fatturato|omzet",
+     {"integer", "float", "currency"}),
+    ("cost", r"spend|cost|budget|expense|cac|cpa|discount|salary|payroll|wage"
+             r"|kosten|costes|couts?($|_)|custos|costi",
+     {"integer", "float", "currency"}),
     # '(^|_)orders?($|_)' keeps 'reorder_point' from reading as a conversion.
     ("conversion", r"conversion|signup|lead|purchase|(^|_)orders?($|_)", {"integer", "float"}),
     ("engagement", r"impression|click|view|visit|session|open", {"integer", "float"}),
@@ -141,7 +146,13 @@ def _map_column(column: ColumnInput) -> MappedColumn | None:
             confidence = 0.85 if allowed_types else 0.75
             return MappedColumn(semantic_type=semantic_type, role=role, confidence=confidence)
 
-    if column.detected_type in {"integer", "float", "currency", "percent"}:
+    if column.detected_type == "currency":
+        # Values literally carried a currency symbol: that is a money measure
+        # even when the column name is unrecognized (non-English exports).
+        # "money" is deliberately neutral — it must not imply revenue for
+        # use-case detection.
+        return MappedColumn(semantic_type="money", role="measure", confidence=0.6)
+    if column.detected_type in {"integer", "float", "percent"}:
         return MappedColumn(semantic_type="other", role="measure", confidence=0.5)
     if column.detected_type == "category":
         return MappedColumn(semantic_type="other", role="dimension", confidence=0.5)
@@ -151,8 +162,8 @@ def _map_column(column: ColumnInput) -> MappedColumn | None:
 
 
 def _role_for(semantic_type: str, column: ColumnInput) -> str:
-    if semantic_type in {"revenue", "cost", "conversion", "engagement", "rating", "quantity",
-                         "duration"}:
+    if semantic_type in {"revenue", "cost", "money", "conversion", "engagement", "rating",
+                         "quantity", "duration"}:
         return "measure"
     if semantic_type == "comment":
         return "text"

@@ -57,6 +57,8 @@ export function SpecRenderer({
   const insights = spec.insights.length > 0 ? spec.insights : inlineInsights;
   const openTrace = (title: string, trace: SourceTrace) =>
     setOverlay({ kind: "trace", title, trace });
+  const tableNames: Record<string, string> = {};
+  for (const source of spec.dataSources) tableNames[source.tableId] = source.displayName;
 
   return (
     <div className="-mx-6">
@@ -101,7 +103,7 @@ export function SpecRenderer({
       <div className="mx-auto -mt-16 max-w-7xl px-6 pb-24">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {kpis.map((widget) => (
-            <KpiCard key={widget.id} widget={widget} onTrace={openTrace} />
+            <KpiCard key={widget.id} widget={widget} tableNames={tableNames} onTrace={openTrace} />
           ))}
         </div>
 
@@ -122,6 +124,7 @@ export function SpecRenderer({
             index={index + 1}
             title={chartSection.title}
             charts={chartSection.charts}
+            tableNames={tableNames}
             onTrace={openTrace}
           />
         ))}
@@ -137,7 +140,7 @@ export function SpecRenderer({
           {overlay.kind === "actions" && <ActionsPanel spec={spec} />}
           {overlay.kind === "sources" && <SourcesPanel spec={spec} />}
           {overlay.kind === "trace" && (
-            <TracePanel title={overlay.title} trace={overlay.trace} />
+            <TracePanel title={overlay.title} trace={overlay.trace} tableNames={tableNames} />
           )}
         </Modal>
       )}
@@ -169,34 +172,47 @@ function Count({ n }: { n: number }) {
   );
 }
 
-function TraceButton({ onClick }: { onClick: () => void }) {
+/** Always-visible provenance: which table and calculation produced this number.
+ * Clicking opens the full trace (filters, row counts, generated-by). */
+function SourceLine({
+  trace,
+  tableNames,
+  onClick,
+}: {
+  trace: SourceTrace;
+  tableNames: Record<string, string>;
+  onClick: () => void;
+}) {
+  const table = tableNames[trace.tableId] ?? trace.tableId;
   return (
     <button
       type="button"
-      title="View source"
+      title="View full source"
       onClick={onClick}
-      className="absolute right-4 top-4 text-neutral-300 transition hover:text-emerald-600"
+      className="mt-3 flex w-full items-center gap-1.5 border-t border-[rgba(11,11,11,0.06)] pt-2 text-left text-[11px] text-[#898781] transition hover:text-emerald-700"
     >
-      ⌕
+      <span aria-hidden className="shrink-0">⌕</span>
+      <span className="truncate">
+        {table} · {trace.calculation} · {trace.rowCount.toLocaleString()} rows
+      </span>
     </button>
   );
 }
 
 function KpiCard({
   widget,
+  tableNames,
   onTrace,
 }: {
   widget: SpecWidget;
+  tableNames: Record<string, string>;
   onTrace: (title: string, trace: SourceTrace) => void;
 }) {
   // Stat-tile contract: label / value (semibold, proportional figures) /
   // delta in success/danger ink. The number is the design — no decoration.
   const kpi = widget.kpi!;
   return (
-    <div className="relative rounded-2xl border border-[rgba(11,11,11,0.10)] bg-[#fcfcfb] p-5 shadow-sm">
-      {kpi.sourceTrace && (
-        <TraceButton onClick={() => onTrace(kpi.label, kpi.sourceTrace!)} />
-      )}
+    <div className="flex flex-col rounded-2xl border border-[rgba(11,11,11,0.10)] bg-[#fcfcfb] p-5 shadow-sm">
       <p className="text-xs font-medium text-[#52514e]">{kpi.label}</p>
       <p className="mt-1.5 text-3xl font-semibold tracking-[-0.01em] text-[#0b0b0b]">
         {typeof kpi.value === "number" ? kpi.value.toLocaleString() : kpi.value}
@@ -204,6 +220,15 @@ function KpiCard({
         {kpi.direction === "down" && <span className="ml-1 text-lg text-[#d03b3b]">▼</span>}
       </p>
       {kpi.changeLabel && <p className="mt-0.5 text-xs text-[#898781]">{kpi.changeLabel}</p>}
+      {kpi.sourceTrace && (
+        <span className="mt-auto">
+          <SourceLine
+            trace={kpi.sourceTrace}
+            tableNames={tableNames}
+            onClick={() => onTrace(kpi.label, kpi.sourceTrace!)}
+          />
+        </span>
+      )}
     </div>
   );
 }
@@ -212,11 +237,13 @@ function ChartSection({
   index,
   title,
   charts,
+  tableNames,
   onTrace,
 }: {
   index: number;
   title: string;
   charts: SpecWidget[];
+  tableNames: Record<string, string>;
   onTrace: (title: string, trace: SourceTrace) => void;
 }) {
   const isWide = (widget: SpecWidget) => widget.size === "xl" || widget.size === "full";
@@ -243,10 +270,23 @@ function ChartSection({
       </div>
       <div className="grid grid-cols-12 gap-4">
         {wide.map((widget) => (
-          <ChartPanel key={widget.id} widget={widget} span="col-span-12" tall onTrace={onTrace} />
+          <ChartPanel
+            key={widget.id}
+            widget={widget}
+            span="col-span-12"
+            tall
+            tableNames={tableNames}
+            onTrace={onTrace}
+          />
         ))}
         {rest.map((widget) => (
-          <ChartPanel key={widget.id} widget={widget} span={restSpan} onTrace={onTrace} />
+          <ChartPanel
+            key={widget.id}
+            widget={widget}
+            span={restSpan}
+            tableNames={tableNames}
+            onTrace={onTrace}
+          />
         ))}
       </div>
     </section>
@@ -257,21 +297,20 @@ function ChartPanel({
   widget,
   span,
   tall,
+  tableNames,
   onTrace,
 }: {
   widget: SpecWidget;
   span: string;
   tall?: boolean;
+  tableNames: Record<string, string>;
   onTrace: (title: string, trace: SourceTrace) => void;
 }) {
   const chart = widget.chart!;
   const option = chart.echartsOption;
   return (
-    <div className={`relative rounded-2xl border border-[rgba(11,11,11,0.10)] bg-[#fcfcfb] p-5 shadow-sm ${span}`}>
-      {chart.sourceTrace && (
-        <TraceButton onClick={() => onTrace(widget.title, chart.sourceTrace!)} />
-      )}
-      <p className="pr-8 text-sm font-semibold text-[#0b0b0b]">{widget.title}</p>
+    <div className={`flex flex-col rounded-2xl border border-[rgba(11,11,11,0.10)] bg-[#fcfcfb] p-5 shadow-sm ${span}`}>
+      <p className="text-sm font-semibold text-[#0b0b0b]">{widget.title}</p>
       <div className="mt-2">
         {option && Object.keys(option).length > 0 ? (
           <EChartsChart option={option} height={tall ? 380 : 310} />
@@ -279,6 +318,15 @@ function ChartPanel({
           <p className="py-16 text-center text-sm text-neutral-400">Chart data unavailable.</p>
         )}
       </div>
+      {chart.sourceTrace && (
+        <span className="mt-auto">
+          <SourceLine
+            trace={chart.sourceTrace}
+            tableNames={tableNames}
+            onClick={() => onTrace(widget.title, chart.sourceTrace!)}
+          />
+        </span>
+      )}
     </div>
   );
 }
@@ -320,9 +368,21 @@ const SEVERITY_BORDERS: Record<string, string> = {
   neutral: "border-l-emerald-300",
 };
 
-function TraceDetails({ trace }: { trace: SourceTrace }) {
+function TraceDetails({
+  trace,
+  tableNames,
+}: {
+  trace: SourceTrace;
+  tableNames?: Record<string, string>;
+}) {
+  const table = tableNames?.[trace.tableId];
   return (
     <div className="mt-2 space-y-0.5 rounded-lg bg-neutral-50 px-3 py-2.5 text-xs text-neutral-600">
+      {table && (
+        <p>
+          <b>Table:</b> {table}
+        </p>
+      )}
       <p>
         <b>Calculation:</b> {trace.calculation}
       </p>
@@ -432,12 +492,20 @@ function SourcesPanel({ spec }: { spec: DashboardSpec }) {
   );
 }
 
-function TracePanel({ title, trace }: { title: string; trace: SourceTrace }) {
+function TracePanel({
+  title,
+  trace,
+  tableNames,
+}: {
+  title: string;
+  trace: SourceTrace;
+  tableNames?: Record<string, string>;
+}) {
   return (
     <div>
       <h3 className="text-lg font-bold tracking-tight">How this was calculated</h3>
       <p className="mb-3 text-xs text-neutral-400">{title}</p>
-      <TraceDetails trace={trace} />
+      <TraceDetails trace={trace} tableNames={tableNames} />
     </div>
   );
 }
