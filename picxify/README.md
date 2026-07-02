@@ -51,13 +51,17 @@ docker run --rm --network host minio/mc:latest \
 
 ```bash
 cd apps/api
+cp .env.example .env    # then paste your Clerk JWKS URL into .env (see comments inside)
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
+alembic upgrade head    # creates all tables
 uvicorn app.main:app --reload --port 8000
 ```
 
 Health check: `curl http://localhost:8000/health`
+
+Note: the API loads `.env` from `apps/api/` (its working directory), not the repo root.
 
 ### 4. Run the Celery worker
 
@@ -71,6 +75,7 @@ celery -A app.workers.celery_app.celery_app worker --loglevel=info
 
 ```bash
 cd apps/web
+cp .env.local.example .env.local   # then paste your two Clerk keys (see comments inside)
 pnpm install
 pnpm dev
 ```
