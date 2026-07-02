@@ -109,15 +109,28 @@ def _columns_by_role(ctx: PlanningContext, role: str) -> list[ColumnCtx]:
     return [c for c in ctx.columns if c.role_hint == role]
 
 
+STRONG_MEASURE_PRIORITY = ["revenue", "cost", "conversion", "engagement", "rating", "quantity"]
+
+
 def _primary_measure(ctx: PlanningContext) -> ColumnCtx | None:
-    priority = ["revenue", "cost", "conversion", "engagement", "rating", "quantity"]
-    measures = _columns_by_role(ctx, "measure")
-    measures.sort(
-        key=lambda c: priority.index(c.semantic_type)
-        if c.semantic_type in priority
-        else len(priority)
-    )
+    """The measure worth summing. Durations and unclassified numerics are
+    excluded — without a strong measure the dashboard counts records instead."""
+    measures = [
+        c for c in _columns_by_role(ctx, "measure") if c.semantic_type in STRONG_MEASURE_PRIORITY
+    ]
+    measures.sort(key=lambda c: STRONG_MEASURE_PRIORITY.index(c.semantic_type))
     return measures[0] if measures else None
+
+
+def _duration_measure(ctx: PlanningContext) -> ColumnCtx | None:
+    return next(
+        (c for c in _columns_by_role(ctx, "measure") if c.semantic_type == "duration"), None
+    )
+
+
+def _count_column(ctx: PlanningContext) -> str:
+    id_column = next((c for c in ctx.columns if c.role_hint == "id"), None)
+    return id_column.name if id_column else ctx.columns[0].name
 
 
 def _primary_dimension(ctx: PlanningContext) -> ColumnCtx | None:
@@ -220,6 +233,14 @@ def _hero_section(ctx: PlanningContext) -> dict | None:
                 _kpi_widget("w_kpi_total", f"Total {measure.name}"[:100], total_fact)
             )
 
+    duration = _duration_measure(ctx)
+    if duration:
+        avg_fact = _fact_by_prefix(ctx, f"fact_avg_{_slug(duration.name)}")
+        if avg_fact:
+            widgets.append(
+                _kpi_widget("w_kpi_avg_duration", f"Average {duration.name}"[:100], avg_fact)
+            )
+
     trend_fact = _fact_by_prefix(ctx, "fact_trend_")
     if trend_fact and isinstance(trend_fact["value"], (int, float)):
         change = float(trend_fact["value"])
@@ -253,19 +274,30 @@ def _hero_section(ctx: PlanningContext) -> dict | None:
 def _charts_section(ctx: PlanningContext) -> dict | None:
     widgets: list[dict] = []
     measure = _primary_measure(ctx)
+    duration = _duration_measure(ctx)
     dates = _columns_by_role(ctx, "date")
     dimension = _primary_dimension(ctx)
     stage = next((c for c in ctx.columns if c.semantic_type in {"stage", "status"}), None)
 
-    if measure and dates and ctx.date_grain:
+    # Without a strong measure, count records instead of summing arbitrary numbers.
+    if measure:
+        metric_measures = [{"column": measure.name, "aggregation": "sum", "alias": measure.name}]
+        metric_label = measure.name
+    else:
+        metric_measures = [
+            {"column": _count_column(ctx), "aggregation": "count", "alias": "records"}
+        ]
+        metric_label = "records"
+
+    if dates and ctx.date_grain:
         widgets.append(
             _chart_widget(
                 "w_chart_trend",
-                f"{measure.name} over time",
+                f"{metric_label} over time",
                 "line",
                 {
                     "tableId": ctx.table_id,
-                    "measures": [{"column": measure.name, "aggregation": "sum", "alias": measure.name}],
+                    "measures": metric_measures,
                     "dimensions": [],
                     "dateColumn": dates[0].name,
                     "dateGrain": ctx.date_grain,
@@ -274,15 +306,37 @@ def _charts_section(ctx: PlanningContext) -> dict | None:
             )
         )
 
-    if measure and dimension:
+    if dimension:
         widgets.append(
             _chart_widget(
                 "w_chart_breakdown",
-                f"{measure.name} by {dimension.name}",
+                f"{metric_label} by {dimension.name}",
                 "donut",
                 {
                     "tableId": ctx.table_id,
-                    "measures": [{"column": measure.name, "aggregation": "sum", "alias": measure.name}],
+                    "measures": metric_measures,
+                    "dimensions": [dimension.name],
+                    "filters": [],
+                    "limit": 8,
+                },
+            )
+        )
+
+    if duration and dimension:
+        widgets.append(
+            _chart_widget(
+                "w_chart_duration",
+                f"Average {duration.name} by {dimension.name}",
+                "horizontal_bar",
+                {
+                    "tableId": ctx.table_id,
+                    "measures": [
+                        {
+                            "column": duration.name,
+                            "aggregation": "avg",
+                            "alias": f"avg_{_slug(duration.name)}",
+                        }
+                    ],
                     "dimensions": [dimension.name],
                     "filters": [],
                     "limit": 8,

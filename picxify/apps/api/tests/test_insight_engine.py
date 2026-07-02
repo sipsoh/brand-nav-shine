@@ -10,9 +10,10 @@ def meta(name, detected="float", semantic=None, role="measure"):
 
 
 def marketing_frame():
-    # Spans > 70 days so the engine picks monthly grain.
+    # Spans > 70 days (monthly grain); June runs to the 25th so it counts as
+    # a complete month for the trend comparison.
     dates = pd.to_datetime(
-        ["2026-03-02", "2026-03-09", "2026-05-04", "2026-05-11", "2026-06-01", "2026-06-08"]
+        ["2026-03-02", "2026-03-09", "2026-05-04", "2026-05-11", "2026-06-01", "2026-06-25"]
     )
     return pd.DataFrame(
         {
@@ -52,7 +53,11 @@ def test_top_contributor_share():
 
 
 def test_outlier_detection_with_mad():
-    frame = pd.DataFrame({"amount": [10.0, 11.0, 9.0, 10.5, 9.5, 10.2, 9.8, 10.1, 500.0]})
+    # One outlier among 16 values (6%) — under the 10% skew cap, so it reports.
+    frame = pd.DataFrame(
+        {"amount": [10.0, 11.0, 9.0, 10.5, 9.5, 10.2, 9.8, 10.1, 10.3, 9.7,
+                    10.4, 9.9, 10.6, 9.6, 10.05, 500.0]}
+    )
     result = compute_insights(frame, "tbl_1", [meta("amount", semantic="revenue")])
     outlier_insights = [i for i in result.insights if i.insight_type == "outlier"]
     assert len(outlier_insights) == 1

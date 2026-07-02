@@ -11,9 +11,14 @@ import pandas as pd
 
 from app.services.profiler import json_safe
 
-MEASURE_PRIORITY = ["revenue", "cost", "conversion", "engagement", "rating", "quantity", "other"]
+MEASURE_PRIORITY = ["revenue", "cost", "conversion", "engagement", "rating", "quantity",
+                    "duration", "other"]
 DIMENSION_PRIORITY = ["campaign", "channel", "stage", "status", "segment", "region", "owner",
                       "account", "customer", "other"]
+# Measures whose sums are business-meaningful. Without one of these, analytics
+# switch to record counts (e.g. tickets per month) — summing a duration or an
+# arbitrary numeric column produces impressive-looking nonsense.
+STRONG_SEMANTICS = {"revenue", "cost", "conversion", "engagement", "rating", "quantity"}
 TOP_CONTRIBUTOR_THRESHOLD = 0.30
 OUTLIER_ROBUST_Z = 3.5
 MAX_DIMENSION_PAIRS = 3
@@ -100,13 +105,14 @@ def compute_insights(df: pd.DataFrame, table_id: str, columns: list[ColumnMeta])
     measures = _ordered(columns, "measure", MEASURE_PRIORITY)
     dimensions = _ordered(columns, "dimension", DIMENSION_PRIORITY)
     date_column = next((c for c in columns if c.role_hint == "date"), None)
+    strong = [m for m in measures if m.semantic_type in STRONG_SEMANTICS]
+    primary = strong[0] if strong else None  # None -> count-based analytics
 
     _overview_facts(df, table_id, measures, result)
-    if date_column is not None and measures:
-        _trend(df, table_id, date_column, measures[0], result)
+    if date_column is not None:
+        _trend(df, table_id, date_column, primary, result)
     for dimension in dimensions[:MAX_DIMENSION_PAIRS]:
-        if measures:
-            _top_contributor(df, table_id, dimension, measures[0], result)
+        _top_contributor(df, table_id, dimension, primary, result)
     for measure in measures:
         _outliers(df, table_id, measure, result)
     stage_column = next(
@@ -154,24 +160,47 @@ def _overview_facts(df, table_id, measures: list[ColumnMeta], result: InsightRes
         series = df[measure.name].dropna()
         if series.empty:
             continue
-        result.facts.append(
-            ComputedFact(
-                id=f"fact_total_{_slug(measure.name)}",
-                label=f"Total {measure.name}",
-                value=round(float(series.sum()), 4),
-                unit=_unit_for(measure),
-                source_trace=SourceTrace(
-                    table_id=table_id,
-                    columns=[measure.name],
-                    calculation=f"sum({measure.name}) across all rows",
-                    row_count=int(series.count()),
-                ),
+        if measure.semantic_type in STRONG_SEMANTICS:
+            result.facts.append(
+                ComputedFact(
+                    id=f"fact_total_{_slug(measure.name)}",
+                    label=f"Total {measure.name}",
+                    value=round(float(series.sum()), 4),
+                    unit=_unit_for(measure),
+                    source_trace=SourceTrace(
+                        table_id=table_id,
+                        columns=[measure.name],
+                        calculation=f"sum({measure.name}) across all rows",
+                        row_count=int(series.count()),
+                    ),
+                )
             )
-        )
+        elif measure.semantic_type == "duration":
+            # Averages are meaningful for durations; totals are not.
+            result.facts.append(
+                ComputedFact(
+                    id=f"fact_avg_{_slug(measure.name)}",
+                    label=f"Average {measure.name}",
+                    value=round(float(series.mean()), 4),
+                    unit=_unit_for(measure),
+                    source_trace=SourceTrace(
+                        table_id=table_id,
+                        columns=[measure.name],
+                        calculation=f"avg({measure.name}) across all rows",
+                        row_count=int(series.count()),
+                    ),
+                )
+            )
 
 
-def _trend(df, table_id, date_column: ColumnMeta, measure: ColumnMeta, result: InsightResult) -> None:
-    frame = df[[date_column.name, measure.name]].dropna()
+def _trend(df, table_id, date_column: ColumnMeta, measure: ColumnMeta | None,
+           result: InsightResult) -> None:
+    """Trend of the primary strong measure, or of record counts when no
+    business measure exists (e.g. ticket volume per month)."""
+    used_columns = [date_column.name] + ([measure.name] if measure else [])
+    frame = df[used_columns].dropna(subset=[date_column.name])
+    if measure is not None:
+        frame = frame.dropna(subset=[measure.name])
     if len(frame) < 4 or not pd.api.types.is_datetime64_any_dtype(frame[date_column.name]):
         return
     span_days = (frame[date_column.name].max() - frame[date_column.name].min()).days
@@ -180,10 +209,28 @@ def _trend(df, table_id, date_column: ColumnMeta, measure: ColumnMeta, result: I
     else:
         freq, grain_label, insight_suffix = "W-MON", "week", "WoW"
 
-    grouped = (
-        frame.groupby(pd.Grouper(key=date_column.name, freq=freq))[measure.name].sum().dropna()
-    )
-    grouped = grouped[grouped != 0] if (grouped == 0).all() else grouped
+    grouper = pd.Grouper(key=date_column.name, freq=freq)
+    if measure is not None:
+        grouped = frame.groupby(grouper)[measure.name].sum().dropna()
+        metric_label = measure.name
+        calculation = f"sum({measure.name}) grouped by {grain_label}"
+    else:
+        grouped = frame.groupby(grouper).size()
+        # Interior gaps show up as zero-count bins; comparing against an empty
+        # period is meaningless, so compare active periods only.
+        grouped = grouped[grouped > 0]
+        metric_label = "records"
+        calculation = f"count(*) grouped by {grain_label}"
+    # A partial current period (data ends mid-month/mid-week) would fake a
+    # decline; compare the two most recent COMPLETE periods instead.
+    partial_note = ""
+    if len(grouped) >= 2:
+        last_start = grouped.index[-1]
+        period_days = 7 if freq.startswith("W") else int(last_start.days_in_month)
+        coverage_days = (frame[date_column.name].max() - last_start).days + 1
+        if coverage_days < 0.8 * period_days:
+            grouped = grouped.iloc[:-1]
+            partial_note = f"; partial current {grain_label} excluded"
     if len(grouped) < 2:
         return
     last, previous = float(grouped.iloc[-1]), float(grouped.iloc[-2])
@@ -193,37 +240,43 @@ def _trend(df, table_id, date_column: ColumnMeta, measure: ColumnMeta, result: I
 
     trace = SourceTrace(
         table_id=table_id,
-        columns=[date_column.name, measure.name],
+        columns=used_columns,
         calculation=(
-            f"sum({measure.name}) grouped by {grain_label}; "
-            f"last {grain_label} / previous {grain_label} - 1"
+            f"{calculation}; last {grain_label} / previous {grain_label} - 1{partial_note}"
         ),
         row_count=len(frame),
     )
     fact = ComputedFact(
-        id=f"fact_trend_{_slug(measure.name)}_{insight_suffix.lower()}",
-        label=f"{measure.name} {insight_suffix} change",
+        id=f"fact_trend_{_slug(metric_label)}_{insight_suffix.lower()}",
+        label=f"{metric_label} {insight_suffix} change",
         value=round(change, 4),
         unit="percent",
         source_trace=trace,
     )
     result.facts.append(fact)
 
-    is_cost = measure.semantic_type == "cost"
-    good = (change > 0) != is_cost
     direction = "up" if change > 0 else "down"
+    if measure is None:
+        severity = "neutral"  # more records is not inherently good or bad
+    else:
+        is_cost = measure.semantic_type == "cost"
+        severity = "positive" if (change > 0) != is_cost else "negative"
     result.insights.append(
         ComputedInsight(
-            id=f"insight_trend_{_slug(measure.name)}",
+            id=f"insight_trend_{_slug(metric_label)}",
             headline=(
-                f"{measure.name} is {direction} {abs(change) * 100:.0f}% {insight_suffix}"
+                f"{metric_label} {'are' if measure is None else 'is'} "
+                f"{direction} {abs(change) * 100:.0f}% {insight_suffix}"
             ),
             detail=(
                 f"Comparing the most recent {grain_label} to the one before, "
-                f"{measure.name} moved from {previous:,.2f} to {last:,.2f}."
+                f"{metric_label} moved from {previous:,.0f} to {last:,.0f}."
+                if measure is None
+                else f"Comparing the most recent {grain_label} to the one before, "
+                f"{metric_label} moved from {previous:,.2f} to {last:,.2f}."
             ),
             insight_type="trend",
-            severity="positive" if good else "negative",
+            severity=severity,
             confidence=0.9,
             facts=[fact],
             source_trace=trace,
@@ -231,12 +284,21 @@ def _trend(df, table_id, date_column: ColumnMeta, measure: ColumnMeta, result: I
     )
 
 
-def _top_contributor(df, table_id, dimension: ColumnMeta, measure: ColumnMeta,
+def _top_contributor(df, table_id, dimension: ColumnMeta, measure: ColumnMeta | None,
                      result: InsightResult) -> None:
-    frame = df[[dimension.name, measure.name]].dropna()
+    metric_label = measure.name if measure else "records"
+    used_columns = [dimension.name] + ([measure.name] if measure else [])
+    frame = df[used_columns].dropna(subset=[dimension.name])
+    if measure is not None:
+        frame = frame.dropna(subset=[measure.name])
     if frame.empty:
         return
-    totals = frame.groupby(dimension.name)[measure.name].sum().sort_values(ascending=False)
+    if measure is not None:
+        totals = frame.groupby(dimension.name)[measure.name].sum().sort_values(ascending=False)
+        aggregation = f"sum({measure.name})"
+    else:
+        totals = frame.groupby(dimension.name).size().sort_values(ascending=False)
+        aggregation = "count(*)"
     overall = float(totals.sum())
     if overall == 0 or len(totals) < 2:
         return
@@ -245,13 +307,13 @@ def _top_contributor(df, table_id, dimension: ColumnMeta, measure: ColumnMeta,
 
     trace = SourceTrace(
         table_id=table_id,
-        columns=[dimension.name, measure.name],
-        calculation=f"sum({measure.name}) grouped by {dimension.name}; top share of total",
+        columns=used_columns,
+        calculation=f"{aggregation} grouped by {dimension.name}; top share of total",
         row_count=len(frame),
     )
     fact = ComputedFact(
-        id=f"fact_top_{_slug(dimension.name)}_{_slug(measure.name)}",
-        label=f"Share of {measure.name} from top {dimension.name} ('{top_name}')",
+        id=f"fact_top_{_slug(dimension.name)}_{_slug(metric_label)}",
+        label=f"Share of {metric_label} from top {dimension.name} ('{top_name}')",
         value=round(share, 4),
         unit="percent",
         source_trace=trace,
@@ -262,14 +324,14 @@ def _top_contributor(df, table_id, dimension: ColumnMeta, measure: ColumnMeta,
     for name, value in totals.head(3).items():
         result.facts.append(
             ComputedFact(
-                id=f"fact_comp_{_slug(dimension.name)}_{_slug(str(name))}_{_slug(measure.name)}",
-                label=f"{measure.name} from {dimension.name} '{name}'",
+                id=f"fact_comp_{_slug(dimension.name)}_{_slug(str(name))}_{_slug(metric_label)}",
+                label=f"{metric_label} from {dimension.name} '{name}'",
                 value=round(float(value), 4),
-                unit=_unit_for(measure),
+                unit=_unit_for(measure) if measure else "number",
                 source_trace=SourceTrace(
                     table_id=table_id,
-                    columns=[dimension.name, measure.name],
-                    calculation=f"sum({measure.name}) where {dimension.name} = '{name}'",
+                    columns=used_columns,
+                    calculation=f"{aggregation} where {dimension.name} = '{name}'",
                     row_count=int((frame[dimension.name] == name).sum()),
                     filters=[f"{dimension.name} = '{name}'"],
                 ),
@@ -279,13 +341,13 @@ def _top_contributor(df, table_id, dimension: ColumnMeta, measure: ColumnMeta,
     if share >= TOP_CONTRIBUTOR_THRESHOLD:
         result.insights.append(
             ComputedInsight(
-                id=f"insight_top_{_slug(dimension.name)}_{_slug(measure.name)}",
+                id=f"insight_top_{_slug(dimension.name)}_{_slug(metric_label)}",
                 headline=(
-                    f"'{top_name}' drives {share * 100:.0f}% of {measure.name}"
+                    f"'{top_name}' accounts for {share * 100:.0f}% of {metric_label}"
                 ),
                 detail=(
                     f"Across {len(totals)} {dimension.name} values, '{top_name}' contributes "
-                    f"{top_value:,.2f} of {overall:,.2f} total {measure.name}."
+                    f"{top_value:,.0f} of {overall:,.0f} total {metric_label}."
                 ),
                 insight_type="top_contributor",
                 severity="neutral",
@@ -307,6 +369,10 @@ def _outliers(df, table_id, measure: ColumnMeta, result: InsightResult) -> None:
     robust_z = 0.6745 * (series - median) / mad
     outliers = series[robust_z.abs() > OUTLIER_ROBUST_Z]
     if outliers.empty:
+        return
+    if len(outliers) / len(series) > 0.10:
+        # A third of the data being "outliers" means a skewed distribution,
+        # not anomalies — reporting it as outliers would be misleading.
         return
 
     trace = SourceTrace(

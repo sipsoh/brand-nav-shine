@@ -1,5 +1,28 @@
 # Changelog
 
+## Accuracy fixes from real-world workbook testing (2026-07-02)
+
+Driven by a real 21-sheet IT ticket-analysis workbook that produced a misleading dashboard:
+
+- **Primary sheet selection**: dashboards now build from the cleanest well-named sheet
+  (quality x named-columns x size) instead of simply the largest — formula-helper and
+  summary sheets no longer win. A sheet picker on the dataset page lets users override
+  (`tableId` on `POST /dashboards/generate`).
+- **Count-based analytics**: without a money-like measure (revenue/cost/conversions),
+  trends and breakdowns count records (tickets per month, tickets by category) instead of
+  summing arbitrary numeric columns. New `duration` semantic type gets averages, never sums
+  ("Average Duration" KPI, "Average Duration by X" chart). New `operations` use-case
+  detection for id+status+date data.
+- **Partial periods excluded from trends**: data ending mid-month no longer fakes a decline;
+  the comparison uses complete periods and says so in the source trace.
+- **Skew is not outliers**: the MAD outlier insight is suppressed when >10% of values flag —
+  that is a skewed distribution, not anomalies.
+- **Semantic mapping across sheets**: a column name appearing on many sheets (e.g.
+  'Duration' on every tab) now gets its mapping applied to all of them, not just the last.
+- **Date coercion tightened**: "20 Hours" / "59 Minutes" text no longer parses as datetimes;
+  a real date separator or month name is required.
+- 10 new regression tests (104 total).
+
 ## Milestone 7 — Dashboard generation (2026-07-02)
 
 - Six dashboard template definitions in source control (client report, marketing, sales,

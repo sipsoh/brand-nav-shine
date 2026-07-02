@@ -66,6 +66,7 @@ NAME_RULES: list[tuple[str, str, set[str] | None]] = [
     ("conversion", r"conversion|signup|lead|purchase|order", {"integer", "float"}),
     ("engagement", r"impression|click|view|visit|session|open", {"integer", "float"}),
     ("rating", r"rating|score|nps|csat|stars", {"integer", "float"}),
+    ("duration", r"duration|elapsed|aging|time_spent|resolution_time|handle_time", {"integer", "float"}),
     ("campaign", r"campaign|ad_group|adset", None),
     ("channel", r"channel|source|medium|platform", None),
     ("stage", r"stage|pipeline", None),
@@ -146,7 +147,8 @@ def _map_column(column: ColumnInput) -> MappedColumn | None:
 
 
 def _role_for(semantic_type: str, column: ColumnInput) -> str:
-    if semantic_type in {"revenue", "cost", "conversion", "engagement", "rating", "quantity"}:
+    if semantic_type in {"revenue", "cost", "conversion", "engagement", "rating", "quantity",
+                         "duration"}:
         return "measure"
     if semantic_type == "comment":
         return "text"
@@ -176,6 +178,14 @@ def _detect_use_cases(mappings: dict[str, MappedColumn], filename: str) -> list[
         scores["customer_feedback"] = 0.6
     if "revenue" in types and "cost" in types and "date" in types and "campaign" not in types:
         scores.setdefault("finance", 0.55)
+    # Ticket/case-style operational data: ids + status + dates, no money signals.
+    if (
+        "status" in types
+        and "id" in types
+        and "date" in types
+        and not ({"revenue", "cost", "rating"} & types)
+    ):
+        scores.setdefault("operations", 0.7)
 
     lowered = filename.lower()
     for keyword, use_case in [
@@ -186,6 +196,8 @@ def _detect_use_cases(mappings: dict[str, MappedColumn], filename: str) -> list[
         ("survey", "survey"),
         ("feedback", "customer_feedback"),
         ("finance", "finance"),
+        ("ticket", "operations"),
+        ("incident", "operations"),
     ]:
         if keyword in lowered and use_case in USE_CASES:
             scores[use_case] = min(0.95, scores.get(use_case, 0.5) + 0.1)

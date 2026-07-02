@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.db import get_db
 from app.models.dashboard import Dashboard, DashboardVersion, DashboardVisibility
-from app.models.dataset import Dataset
+from app.models.dataset import Dataset, DatasetTable
 from app.models.job import GenerationJob, JobStatus
 from app.models.user import User
 from app.models.workspace import WorkspaceRole
@@ -50,6 +50,7 @@ class GenerateRequest(BaseModel):
 
     workspace_id: uuid.UUID = Field(alias="workspaceId")
     dataset_id: uuid.UUID = Field(alias="datasetId")
+    table_id: uuid.UUID | None = Field(default=None, alias="tableId")
     audience: str = "client"
     use_case_hint: str | None = Field(default=None, alias="useCaseHint")
     title_hint: str | None = Field(default=None, alias="titleHint", max_length=120)
@@ -129,6 +130,18 @@ def generate_dashboard(
             detail="This dataset has not finished processing yet.",
         )
 
+    if body.table_id is not None:
+        table = db.scalar(
+            select(DatasetTable).where(
+                DatasetTable.id == body.table_id, DatasetTable.dataset_id == dataset.id
+            )
+        )
+        if table is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="That sheet does not belong to this dataset.",
+            )
+
     dashboard = Dashboard(
         workspace_id=body.workspace_id,
         dataset_id=dataset.id,
@@ -150,6 +163,7 @@ def generate_dashboard(
             "audience": body.audience,
             "useCaseHint": body.use_case_hint,
             "titleHint": body.title_hint,
+            "tableId": str(body.table_id) if body.table_id else None,
         },
     )
     db.add(job)

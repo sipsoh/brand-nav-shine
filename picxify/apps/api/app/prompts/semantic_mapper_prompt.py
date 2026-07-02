@@ -31,6 +31,7 @@ SEMANTIC_TYPES = [
     "cost",
     "conversion",
     "engagement",
+    "duration",
     "date",
     "customer",
     "account",

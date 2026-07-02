@@ -201,7 +201,9 @@ def _apply_semantic_mapping(db: Session, dataset: Dataset, uploaded_file: Upload
     """Run the semantic mapper over the freshly profiled columns and persist
     semantic types, use-case candidates, and reviewable assumptions."""
     tables = db.scalars(select(DatasetTable).where(DatasetTable.dataset_id == dataset.id)).all()
-    columns_by_name: dict[str, DatasetColumn] = {}
+    # The same column name often appears on many sheets (e.g. 'Duration' on every
+    # per-category tab); a mapping for a name applies to all of them.
+    columns_by_name: dict[str, list[DatasetColumn]] = {}
     table_inputs: list[TableInput] = []
     for table in tables:
         db_columns = db.scalars(
@@ -209,7 +211,7 @@ def _apply_semantic_mapping(db: Session, dataset: Dataset, uploaded_file: Upload
         ).all()
         column_inputs = []
         for column in db_columns:
-            columns_by_name[column.name] = column
+            columns_by_name.setdefault(column.name, []).append(column)
             column_inputs.append(
                 ColumnInput(
                     name=column.name,
@@ -231,11 +233,9 @@ def _apply_semantic_mapping(db: Session, dataset: Dataset, uploaded_file: Upload
     )
 
     for column_name, mapped in mapping.column_mappings.items():
-        column = columns_by_name.get(column_name)
-        if column is None:
-            continue
-        column.semantic_type = mapped.semantic_type
-        column.role_hint = mapped.role
+        for column in columns_by_name.get(column_name, []):
+            column.semantic_type = mapped.semantic_type
+            column.role_hint = mapped.role
 
     for item in mapping.assumptions:
         db.add(

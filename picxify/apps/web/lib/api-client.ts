@@ -313,6 +313,7 @@ export function generateDashboard(
   input: {
     workspaceId: string;
     datasetId: string;
+    tableId?: string;
     audience?: string;
     useCaseHint?: string;
     titleHint?: string;

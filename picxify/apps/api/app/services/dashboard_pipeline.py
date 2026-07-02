@@ -49,6 +49,35 @@ class GenerationError(Exception):
     pass
 
 
+def select_primary_table(tables: list, requested_table_id: str | None = None):
+    """Pick the sheet the dashboard is built from.
+
+    Users can pin a sheet explicitly; otherwise prefer clean, well-named tables
+    over merely large ones — real workbooks carry formula-helper and summary
+    sheets that can out-row the actual data (quality x named-columns x size).
+    """
+    if requested_table_id:
+        for table in tables:
+            if str(table.id) == str(requested_table_id):
+                return table
+        raise GenerationError("The requested sheet was not found in this dataset.")
+
+    import math
+
+    def score(table) -> float:
+        columns = table.profile.get("columns") or []
+        if columns:
+            named_ratio = sum(
+                0 if str(c).startswith("unnamed") else 1 for c in columns
+            ) / len(columns)
+        else:
+            named_ratio = 0.5
+        quality = float(table.profile.get("qualityScore") or 0.5)
+        return (0.6 * quality + 0.4 * named_ratio) * math.log10(max(table.row_count, 2))
+
+    return max(tables, key=score)
+
+
 def run_generate_dashboard(
     db: Session, storage, dashboard_id: uuid.UUID, job_id: uuid.UUID
 ) -> None:
@@ -82,11 +111,10 @@ def _run(db: Session, storage, dashboard: Dashboard, job: GenerationJob) -> None
     tables_with_snapshots = [t for t in dataset.tables if t.snapshot_object_key]
     if not tables_with_snapshots:
         raise GenerationError("No processed data snapshot found for this dataset.")
-    primary = max(tables_with_snapshots, key=lambda t: t.row_count)
+    options = job.input or {}
+    primary = select_primary_table(tables_with_snapshots, options.get("tableId"))
     df = pd.read_parquet(BytesIO(storage.get_bytes(primary.snapshot_object_key)))
     frames = {str(primary.id): df}
-
-    options = job.input or {}
     use_case = options.get("useCaseHint") or (
         (dataset.profile.get("useCaseCandidates") or [{}])[0].get("useCase") or "generic"
     )

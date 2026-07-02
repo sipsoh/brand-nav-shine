@@ -259,9 +259,13 @@ def _coerce_dates(df: pd.DataFrame, notes: list[TransformNote]) -> pd.DataFrame:
         values = df[column].dropna()
         if len(values) == 0 or not all(isinstance(v, str) for v in values):
             continue
-        # Cheap pre-filter: dates contain digits and separators.
+        # Cheap pre-filter: dates need a digit plus a real date separator or a
+        # month name. Space alone is not enough — '20 Hours' is not a date.
+        date_hint = re.compile(
+            r"[-/:.]|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", re.IGNORECASE
+        )
         looks_datey = values.map(
-            lambda v: bool(re.search(r"\d", v)) and bool(re.search(r"[-/., ]", v))
+            lambda v: bool(re.search(r"\d", v)) and bool(date_hint.search(v))
         ).mean()
         if looks_datey < COERCION_THRESHOLD:
             continue
