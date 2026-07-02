@@ -3,7 +3,12 @@
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getDataset, type DatasetResponse } from "@/lib/api-client";
+import {
+  getDataset,
+  updateAssumption,
+  type AssumptionSummary,
+  type DatasetResponse,
+} from "@/lib/api-client";
 import { clerkEnabled } from "@/lib/auth";
 
 const TYPE_STYLES: Record<string, string> = {
@@ -74,18 +79,34 @@ function LoadedProfile({ datasetId }: { datasetId: string }) {
   if (error) return <p className="text-sm text-red-600">{error}</p>;
   if (!dataset) return <p className="text-sm text-neutral-500">Loading dataset…</p>;
 
+  const topUseCase = dataset.useCaseCandidates[0];
+
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-neutral-200 bg-white px-5 py-4 text-sm">
         <span className="font-semibold text-neutral-900">{dataset.name}</span>
         <Stat label="rows" value={dataset.rowCount ?? 0} />
         <Stat label={dataset.tableCount === 1 ? "table" : "tables"} value={dataset.tableCount} />
+        {topUseCase && (
+          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
+            Looks like: {topUseCase.useCase.replace(/_/g, " ")} (
+            {Math.round(topUseCase.confidence * 100)}%)
+          </span>
+        )}
         {dataset.qualityScore !== null && (
           <span className="ml-auto rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-700">
             Quality score: {(dataset.qualityScore * 100).toFixed(0)}%
           </span>
         )}
       </div>
+
+      {dataset.assumptions.length > 0 && (
+        <AssumptionPanel
+          datasetId={dataset.id}
+          assumptions={dataset.assumptions}
+          getToken={getToken}
+        />
+      )}
 
       {dataset.findings.length > 0 && (
         <section>
@@ -118,6 +139,7 @@ function LoadedProfile({ datasetId }: { datasetId: string }) {
                 <tr>
                   <th className="px-4 py-3">Column</th>
                   <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Meaning</th>
                   <th className="px-4 py-3">Role</th>
                   <th className="px-4 py-3">Missing</th>
                   <th className="px-4 py-3">Examples</th>
@@ -135,6 +157,11 @@ function LoadedProfile({ datasetId }: { datasetId: string }) {
                       >
                         {column.detectedType}
                       </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-neutral-600">
+                      {column.semanticType && column.semanticType !== "other"
+                        ? column.semanticType
+                        : "—"}
                     </td>
                     <td className="px-4 py-2.5 text-neutral-600">{column.roleHint ?? "—"}</td>
                     <td className="px-4 py-2.5 text-neutral-600">
@@ -161,5 +188,89 @@ function Stat({ label, value }: { label: string; value: number }) {
     <span className="text-neutral-600">
       <span className="font-semibold text-neutral-900">{value.toLocaleString()}</span> {label}
     </span>
+  );
+}
+
+const STATUS_BADGES: Record<string, string> = {
+  needs_review: "bg-amber-50 text-amber-700",
+  accepted: "bg-green-50 text-green-700",
+  rejected: "bg-red-50 text-red-600 line-through",
+  system: "bg-neutral-100 text-neutral-600",
+};
+
+function AssumptionPanel({
+  datasetId,
+  assumptions: initial,
+  getToken,
+}: {
+  datasetId: string;
+  assumptions: AssumptionSummary[];
+  getToken: () => Promise<string | null>;
+}) {
+  const [assumptions, setAssumptions] = useState(initial);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function review(assumption: AssumptionSummary, status: "accepted" | "rejected") {
+    setBusy(assumption.id);
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const updated = await updateAssumption(token, datasetId, assumption.id, { status });
+      setAssumptions((current) =>
+        current.map((a) => (a.id === updated.id ? { ...a, status: updated.status } : a)),
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section>
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+        Assumptions — review what Picxify inferred
+      </h2>
+      <ul className="mt-3 space-y-2">
+        {assumptions.map((assumption) => (
+          <li
+            key={assumption.id}
+            className="flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm"
+          >
+            <span className="min-w-0 flex-1 text-neutral-800">{assumption.label}</span>
+            {assumption.confidence !== null && (
+              <span className="text-xs text-neutral-400">
+                {Math.round(assumption.confidence * 100)}% confident
+              </span>
+            )}
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                STATUS_BADGES[assumption.status] ?? STATUS_BADGES.system
+              }`}
+            >
+              {assumption.status.replace("_", " ")}
+            </span>
+            {assumption.editable && assumption.status === "needs_review" && (
+              <span className="flex gap-1.5">
+                <button
+                  type="button"
+                  disabled={busy === assumption.id}
+                  onClick={() => review(assumption, "accepted")}
+                  className="rounded-md border border-green-300 px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
+                >
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  disabled={busy === assumption.id}
+                  onClick={() => review(assumption, "rejected")}
+                  className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  Reject
+                </button>
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

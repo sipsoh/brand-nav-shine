@@ -13,20 +13,24 @@ from io import BytesIO
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.assumption import Assumption, AssumptionSource, AssumptionStatus
 from app.models.dataset import DataQualityFinding, Dataset, DatasetColumn, DatasetTable
 from app.models.job import GenerationJob, JobStatus
 from app.models.upload import FileStatus, UploadedFile
+from app.services.llm import get_semantic_mapper_llm
 from app.services.normalization import normalize_table, snake_case
 from app.services.parser import ParseError, parse_file
 from app.services.profiler import profile_table
+from app.services.semantic_mapper import ColumnInput, TableInput, map_dataset
 
 logger = logging.getLogger(__name__)
 
 PROGRESS_STEPS = [
     (10, "Reading file"),
-    (35, "Cleaning data"),
-    (60, "Detecting columns"),
-    (85, "Saving dataset profile"),
+    (30, "Cleaning data"),
+    (50, "Detecting columns"),
+    (70, "Finding the story"),
+    (90, "Saving dataset profile"),
 ]
 
 
@@ -161,6 +165,9 @@ def _run(
         }
 
     _progress(db, job, *PROGRESS_STEPS[3])
+    _apply_semantic_mapping(db, dataset, uploaded_file)
+
+    _progress(db, job, *PROGRESS_STEPS[4])
 
     all_findings = db.scalars(
         select(DataQualityFinding).where(DataQualityFinding.dataset_id == dataset.id)
@@ -173,6 +180,7 @@ def _run(
     dataset.row_count = total_rows
     dataset.table_count = len(raw_tables)
     dataset.profile = {
+        **dataset.profile,
         "tableCount": len(raw_tables),
         "rowCount": total_rows,
         "findingCounts": _finding_counts(all_findings),
@@ -185,6 +193,66 @@ def _run(
     job.output = {"datasetId": str(dataset.id), "tableIds": table_ids}
     job.finished_at = datetime.now(timezone.utc)
     db.commit()
+
+
+def _apply_semantic_mapping(db: Session, dataset: Dataset, uploaded_file: UploadedFile) -> None:
+    """Run the semantic mapper over the freshly profiled columns and persist
+    semantic types, use-case candidates, and reviewable assumptions."""
+    tables = db.scalars(select(DatasetTable).where(DatasetTable.dataset_id == dataset.id)).all()
+    columns_by_name: dict[str, DatasetColumn] = {}
+    table_inputs: list[TableInput] = []
+    for table in tables:
+        db_columns = db.scalars(
+            select(DatasetColumn).where(DatasetColumn.table_id == table.id)
+        ).all()
+        column_inputs = []
+        for column in db_columns:
+            columns_by_name[column.name] = column
+            column_inputs.append(
+                ColumnInput(
+                    name=column.name,
+                    normalized_name=column.normalized_name,
+                    detected_type=column.detected_type,
+                    role_hint=column.role_hint,
+                    unique_ratio=(
+                        float(column.unique_ratio) if column.unique_ratio is not None else None
+                    ),
+                    examples=column.examples,
+                )
+            )
+        table_inputs.append(TableInput(name=table.name, columns=column_inputs))
+
+    mapping = map_dataset(
+        table_inputs,
+        filename=uploaded_file.original_filename,
+        llm=get_semantic_mapper_llm(),
+    )
+
+    for column_name, mapped in mapping.column_mappings.items():
+        column = columns_by_name.get(column_name)
+        if column is None:
+            continue
+        column.semantic_type = mapped.semantic_type
+        column.role_hint = mapped.role
+
+    for item in mapping.assumptions:
+        db.add(
+            Assumption(
+                dataset_id=dataset.id,
+                label=item["label"],
+                status=AssumptionStatus.NEEDS_REVIEW.value,
+                confidence=item["confidence"],
+                editable=item["editable"],
+                source=AssumptionSource.SEMANTIC_MAPPER.value,
+                affected_columns=item.get("affected_columns", []),
+            )
+        )
+
+    dataset.profile = {
+        **dataset.profile,
+        "useCaseCandidates": mapping.use_case_candidates,
+        "semanticMapper": {"promptVersion": mapping.prompt_version, "usedLlm": mapping.used_llm},
+    }
 
 
 def _write_snapshot(storage, dataset: Dataset, table_name: str, dataframe) -> str:

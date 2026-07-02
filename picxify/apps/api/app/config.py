@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     max_upload_mb_free: int = 10
     max_upload_mb_creator: int = 100
 
+    openai_api_key: str = ""
+    openai_model_planner: str = "gpt-4.1"
+    openai_model_narrative: str = "gpt-4.1-mini"
+    openai_model_text_analysis: str = "gpt-4.1-mini"
+
     @property
     def cors_origins(self) -> list[str]:
         return [self.app_url]

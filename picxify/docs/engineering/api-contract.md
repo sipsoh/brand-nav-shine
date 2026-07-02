@@ -35,6 +35,13 @@ All endpoints below require a Clerk-issued bearer JWT (verified against `CLERK_J
 | `GET /jobs/{jobId}` | Job status/progress/current step; membership-checked via the job's workspace. |
 | `GET /datasets/{datasetId}` | Full profile: tables, columns (types, roles, null/unique ratios, stats, examples), sample rows, and data-quality findings. |
 
+## Implemented (Milestone 5)
+
+| Endpoint | Behavior |
+|---|---|
+| `GET /datasets/{id}` (extended) | Now includes `useCaseCandidates`, per-column `semanticType`, and the dataset's `assumptions`. |
+| `PATCH /datasets/{datasetId}/assumptions/{assumptionId}` | Accept/reject an assumption, or apply a `replacement` (`{column, semanticType}`) that remaps a column's meaning. Editor+ role; 409 for non-editable assumptions. |
+
 ## Rules
 
 - All routes require authenticated workspace access unless explicitly public.

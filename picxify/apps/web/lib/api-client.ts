@@ -145,6 +145,16 @@ export interface DatasetTable {
   columns: DatasetColumn[];
 }
 
+export interface AssumptionSummary {
+  id: string;
+  label: string;
+  status: "accepted" | "needs_review" | "rejected" | "system";
+  confidence: number | null;
+  editable: boolean;
+  source: string;
+  affectedColumns: string[];
+}
+
 export interface DatasetResponse {
   id: string;
   name: string;
@@ -152,8 +162,23 @@ export interface DatasetResponse {
   rowCount: number | null;
   tableCount: number;
   qualityScore: number | null;
+  useCaseCandidates: { useCase: string; confidence: number }[];
   tables: DatasetTable[];
   findings: { severity: string; findingType: string; message: string }[];
+  assumptions: AssumptionSummary[];
+}
+
+export function updateAssumption(
+  token: string,
+  datasetId: string,
+  assumptionId: string,
+  patch: { status?: "accepted" | "rejected"; replacement?: { column: string; semanticType: string } },
+): Promise<AssumptionSummary> {
+  return apiFetch<AssumptionSummary>(`/datasets/${datasetId}/assumptions/${assumptionId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(patch),
+  });
 }
 
 export function getDataset(token: string, datasetId: string): Promise<DatasetResponse> {

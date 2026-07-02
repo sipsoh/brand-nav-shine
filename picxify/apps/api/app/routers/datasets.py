@@ -9,11 +9,13 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth import get_current_user
 from app.db import get_db
-from app.models.dataset import Dataset
+from app.models.assumption import Assumption, AssumptionStatus
+from app.models.dataset import Dataset, DatasetColumn, DatasetTable
 from app.models.job import GenerationJob, JobStatus
 from app.models.upload import FileStatus, UploadedFile
 from app.models.user import User
 from app.models.workspace import WorkspaceRole
+from app.prompts.semantic_mapper_prompt import SEMANTIC_TYPES
 from app.services.permissions import require_membership
 
 logger = logging.getLogger(__name__)
@@ -97,6 +99,18 @@ class FindingResponse(BaseModel):
     message: str
 
 
+class AssumptionResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: uuid.UUID
+    label: str
+    status: str
+    confidence: float | None
+    editable: bool
+    source: str
+    affected_columns: list = Field(alias="affectedColumns")
+
+
 class DatasetResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -106,8 +120,17 @@ class DatasetResponse(BaseModel):
     row_count: int | None = Field(alias="rowCount")
     table_count: int = Field(alias="tableCount")
     quality_score: float | None = Field(alias="qualityScore")
+    use_case_candidates: list = Field(alias="useCaseCandidates", default_factory=list)
     tables: list[TableResponse]
     findings: list[FindingResponse]
+    assumptions: list[AssumptionResponse]
+
+
+class AssumptionPatchRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    status: str | None = None
+    replacement: dict | None = None  # {"column": "...", "semanticType": "..."}
 
 
 @router.post("/from-file", response_model=DatasetFromFileResponse)
@@ -160,6 +183,73 @@ def create_dataset_from_file(
     )
 
 
+@router.patch("/{dataset_id}/assumptions/{assumption_id}", response_model=AssumptionResponse)
+def update_assumption(
+    dataset_id: uuid.UUID,
+    assumption_id: uuid.UUID,
+    body: AssumptionPatchRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AssumptionResponse:
+    dataset = db.scalar(select(Dataset).where(Dataset.id == dataset_id))
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found.")
+    require_membership(db, dataset.workspace_id, user, roles=EDITOR_ROLES)
+
+    assumption = db.scalar(
+        select(Assumption).where(
+            Assumption.id == assumption_id, Assumption.dataset_id == dataset_id
+        )
+    )
+    if assumption is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assumption not found.")
+    if not assumption.editable:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="This assumption is not editable."
+        )
+
+    if body.status is not None:
+        if body.status not in {AssumptionStatus.ACCEPTED.value, AssumptionStatus.REJECTED.value}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Status must be 'accepted' or 'rejected'.",
+            )
+        assumption.status = body.status
+
+    if body.replacement is not None:
+        column_name = body.replacement.get("column")
+        semantic_type = body.replacement.get("semanticType")
+        if not column_name or semantic_type not in SEMANTIC_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Replacement needs a 'column' and a valid 'semanticType'.",
+            )
+        column = db.scalar(
+            select(DatasetColumn)
+            .join(DatasetColumn.table)
+            .where(DatasetTable.dataset_id == dataset_id, DatasetColumn.name == column_name)
+        )
+        if column is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Column '{column_name}' not found in this dataset.",
+            )
+        column.semantic_type = semantic_type
+        assumption.status = AssumptionStatus.ACCEPTED.value
+        assumption.meta = {**assumption.meta, "replacement": body.replacement, "byUser": True}
+
+    db.commit()
+    return AssumptionResponse(
+        id=assumption.id,
+        label=assumption.label,
+        status=assumption.status,
+        confidence=float(assumption.confidence) if assumption.confidence is not None else None,
+        editable=assumption.editable,
+        source=assumption.source,
+        affected_columns=assumption.affected_columns,
+    )
+
+
 @router.get("/{dataset_id}", response_model=DatasetResponse)
 def get_dataset(
     dataset_id: uuid.UUID,
@@ -175,6 +265,12 @@ def get_dataset(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found.")
     require_membership(db, dataset.workspace_id, user)
 
+    assumptions = db.scalars(
+        select(Assumption)
+        .where(Assumption.dataset_id == dataset.id)
+        .order_by(Assumption.created_at)
+    ).all()
+
     return DatasetResponse(
         id=dataset.id,
         name=dataset.name,
@@ -182,6 +278,19 @@ def get_dataset(
         row_count=dataset.row_count,
         table_count=dataset.table_count,
         quality_score=float(dataset.quality_score) if dataset.quality_score is not None else None,
+        use_case_candidates=dataset.profile.get("useCaseCandidates", []),
+        assumptions=[
+            AssumptionResponse(
+                id=a.id,
+                label=a.label,
+                status=a.status,
+                confidence=float(a.confidence) if a.confidence is not None else None,
+                editable=a.editable,
+                source=a.source,
+                affected_columns=a.affected_columns,
+            )
+            for a in assumptions
+        ],
         tables=[
             TableResponse(
                 id=table.id,

@@ -1,5 +1,26 @@
 # Changelog
 
+## Milestone 5 — Semantic mapping and assumptions (2026-07-02)
+
+- Semantic mapper (SETUP.md §9.5): deterministic heuristic core (name patterns + detected
+  types) that always runs, plus an optional schema-constrained LLM pass. LLM output is
+  validated against the real columns — hallucinated columns are dropped, invalid output
+  falls back to heuristics entirely.
+- Use-case detection: marketing / sales / survey / customer_feedback / finance / generic,
+  from semantic signals plus filename hints; candidates stored on the dataset profile.
+- LLM provider behind an interface (`app/services/llm.py`); OpenAI Structured Outputs when
+  `OPENAI_API_KEY` is set, `None` otherwise — keyless dev stays fully functional.
+- Versioned prompt in source control (`semantic_mapper_v1`) with its JSON output schema;
+  prompt version recorded in the dataset profile.
+- `assumptions` model + migration `0004`; the pipeline now has a "Finding the story" step
+  that persists semantic types, use-case candidates, and reviewable assumptions.
+- `PATCH /datasets/{id}/assumptions/{id}`: accept/reject, or remap a column's semantic type
+  via `replacement`; dataset response now carries assumptions and use-case candidates.
+- Web: assumption panel on the dataset page with confidence, accept/reject actions, and a
+  "Looks like: marketing (90%)" use-case badge; columns table shows the inferred meaning.
+- Tests: 13 new pytest cases (63 total) — heuristics per use case, LLM merge/hallucination/
+  fallback behavior with fake clients, and the full assumption review flow with isolation.
+
 ## Milestone 4 — Parsing and profiling (2026-07-01)
 
 - Parser: CSV/TSV/TXT via DuckDB auto-detection; Excel via openpyxl with one table per

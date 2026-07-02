@@ -1,3 +1,4 @@
+from app.models.assumption import Assumption, AssumptionSource, AssumptionStatus
 from app.models.dataset import DataQualityFinding, Dataset, DatasetColumn, DatasetTable
 from app.models.job import GenerationJob, JobStatus
 from app.models.upload import FileStatus, UploadedFile
@@ -17,4 +18,7 @@ __all__ = [
     "DataQualityFinding",
     "GenerationJob",
     "JobStatus",
+    "Assumption",
+    "AssumptionStatus",
+    "AssumptionSource",
 ]
