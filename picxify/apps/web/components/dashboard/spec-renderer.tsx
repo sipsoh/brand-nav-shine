@@ -59,6 +59,10 @@ export function SpecRenderer({
     setOverlay({ kind: "trace", title, trace });
   const tableNames: Record<string, string> = {};
   for (const source of spec.dataSources) tableNames[source.tableId] = source.displayName;
+  // Mirrors app/services/confidence.py::LOW_CONFIDENCE_THRESHOLD.
+  const lowConfidenceSource = spec.dataSources.find(
+    (s) => typeof s.structureConfidence === "number" && s.structureConfidence < 0.6
+  );
 
   return (
     <div className="-mx-6">
@@ -106,6 +110,23 @@ export function SpecRenderer({
             <KpiCard key={widget.id} widget={widget} tableNames={tableNames} onTrace={openTrace} />
           ))}
         </div>
+
+        {lowConfidenceSource && (
+          <button
+            type="button"
+            onClick={() => setOverlay({ kind: "sources" })}
+            className="mt-4 flex w-full items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3.5 text-left transition hover:border-amber-300"
+          >
+            <span aria-hidden className="mt-0.5 text-amber-500">⚠</span>
+            <span className="text-sm text-amber-900">
+              <b className="font-semibold">
+                We had to guess at the structure of &ldquo;{lowConfidenceSource.displayName}&rdquo;
+              </b>{" "}
+              ({Math.round((lowConfidenceSource.structureConfidence ?? 0) * 100)}% confidence).
+              Double-check the numbers — see Sources &amp; assumptions for what we assumed.
+            </span>
+          </button>
+        )}
 
         {execText?.markdown && (
           <div className="mt-4 flex items-baseline gap-3 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-lime-50 px-6 py-4">

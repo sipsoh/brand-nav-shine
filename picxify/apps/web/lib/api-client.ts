@@ -96,7 +96,7 @@ export interface DatasetFromFileResponse {
 
 export function createDatasetFromFile(
   token: string,
-  input: { workspaceId: string; fileId: string; name: string },
+  input: { workspaceId: string; fileId: string; fileIds?: string[]; name: string },
 ): Promise<DatasetFromFileResponse> {
   return apiFetch<DatasetFromFileResponse>("/datasets/from-file", {
     method: "POST",
@@ -287,6 +287,7 @@ export interface DashboardSpec {
     displayName: string;
     rowCount: number;
     columnCount: number;
+    structureConfidence?: number | null;
   }[];
   assumptions: AssumptionSummary[];
   sections: { id: string; title: string; subtitle?: string; layout: string; widgets: SpecWidget[] }[];

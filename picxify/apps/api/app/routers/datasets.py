@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.auth import get_current_user
 from app.db import get_db
 from app.models.assumption import Assumption, AssumptionStatus
-from app.models.dataset import DataQualityFinding, Dataset, DatasetColumn, DatasetTable
+from app.models.dataset import DataQualityFinding, Dataset, DatasetColumn, DatasetFile, DatasetTable
 from app.models.job import GenerationJob, JobStatus
 from app.models.upload import FileStatus, UploadedFile
 from app.models.user import User
@@ -58,6 +58,10 @@ class DatasetFromFileRequest(BaseModel):
 
     workspace_id: uuid.UUID = Field(alias="workspaceId")
     file_id: uuid.UUID = Field(alias="fileId")
+    # Optional: build one dataset from several uploads (e.g. orders.csv +
+    # customers.csv) so their tables can be unioned or joined together. When
+    # present, file_id must be its first element (kept for older clients).
+    file_ids: list[uuid.UUID] = Field(default_factory=list, alias="fileIds")
     name: str = Field(min_length=1, max_length=200)
 
 
@@ -148,22 +152,33 @@ def create_dataset_from_file(
 ) -> DatasetFromFileResponse:
     require_membership(db, body.workspace_id, user, roles=EDITOR_ROLES)
 
-    uploaded_file = db.scalar(
-        select(UploadedFile).where(
-            UploadedFile.id == body.file_id, UploadedFile.workspace_id == body.workspace_id
-        )
-    )
-    if uploaded_file is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
-    if uploaded_file.status not in {FileStatus.UPLOADED.value, FileStatus.PARSED.value}:
+    file_ids = body.file_ids or [body.file_id]
+    if body.file_id not in file_ids:
+        file_ids = [body.file_id, *file_ids]
+    if len(file_ids) > 20:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This file has not finished uploading.",
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Too many files for one dataset."
         )
+
+    uploaded_files = db.scalars(
+        select(UploadedFile).where(
+            UploadedFile.id.in_(file_ids), UploadedFile.workspace_id == body.workspace_id
+        )
+    ).all()
+    files_by_id = {f.id: f for f in uploaded_files}
+    missing = [fid for fid in file_ids if fid not in files_by_id]
+    if missing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+    for uploaded_file in uploaded_files:
+        if uploaded_file.status not in {FileStatus.UPLOADED.value, FileStatus.PARSED.value}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This file has not finished uploading.",
+            )
 
     dataset = Dataset(
         workspace_id=body.workspace_id,
-        file_id=uploaded_file.id,
+        file_id=file_ids[0],
         name=body.name,
         source_type="file",
         created_by=user.id,
@@ -171,13 +186,16 @@ def create_dataset_from_file(
     db.add(dataset)
     db.flush()
 
+    for position, file_id in enumerate(file_ids):
+        db.add(DatasetFile(dataset_id=dataset.id, file_id=file_id, position=position))
+
     job = GenerationJob(
         workspace_id=body.workspace_id,
         user_id=user.id,
         dataset_id=dataset.id,
         job_type="parse_dataset",
         status=JobStatus.QUEUED.value,
-        input={"fileId": str(uploaded_file.id)},
+        input={"fileId": str(file_ids[0]), "fileIds": [str(fid) for fid in file_ids]},
     )
     db.add(job)
     db.commit()

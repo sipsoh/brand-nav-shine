@@ -63,9 +63,15 @@ def test_presign_returns_url_and_creates_record(as_user, storage):
 
 def test_presign_rejects_unsupported_and_macro_files(as_user, storage):
     client, workspace_id = _setup_workspace(as_user)
-    for filename in ["report.pdf", "macro.xlsm", "tool.exe"]:
+    for filename in ["image.png", "macro.xlsm", "tool.exe"]:
         response = _presign(client, workspace_id, filename=filename)
         assert response.status_code == 415, filename
+
+
+def test_presign_accepts_pdf(as_user, storage):
+    client, workspace_id = _setup_workspace(as_user)
+    response = _presign(client, workspace_id, filename="report.pdf")
+    assert response.status_code == 200
 
 
 def test_presign_rejects_oversized_file(as_user, storage):

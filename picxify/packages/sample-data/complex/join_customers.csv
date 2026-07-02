@@ -1,0 +1,16 @@
+customer_id,name,segment
+C0,Customer 0,Enterprise
+C1,Customer 1,Mid-Market
+C2,Customer 2,Enterprise
+C3,Customer 3,Enterprise
+C4,Customer 4,SMB
+C5,Customer 5,Enterprise
+C6,Customer 6,Mid-Market
+C7,Customer 7,Mid-Market
+C8,Customer 8,Enterprise
+C9,Customer 9,SMB
+C10,Customer 10,Mid-Market
+C11,Customer 11,Enterprise
+C12,Customer 12,Enterprise
+C13,Customer 13,SMB
+C14,Customer 14,SMB

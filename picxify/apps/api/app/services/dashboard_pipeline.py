@@ -73,7 +73,12 @@ def select_primary_table(tables: list, requested_table_id: str | None = None):
         else:
             named_ratio = 0.5
         quality = float(table.profile.get("qualityScore") or 0.5)
-        return (0.6 * quality + 0.4 * named_ratio) * math.log10(max(table.row_count, 2))
+        # A small nudge for more columns when quality/size are otherwise
+        # tied — this is what lets a joined table (same rows as its fact
+        # table, but enriched with a dimension's columns) win a genuine tie
+        # instead of losing to alphabetical table-name ordering.
+        column_bonus = 1 + 0.02 * min(len(columns), 20)
+        return (0.6 * quality + 0.4 * named_ratio) * math.log10(max(table.row_count, 2)) * column_bonus
 
     return max(tables, key=score)
 
@@ -179,6 +184,7 @@ def _run(db: Session, storage, dashboard: Dashboard, job: GenerationJob) -> None
         template=template,
         date_grain=_pick_date_grain(df, primary.columns),
         title_hint=options.get("titleHint"),
+        structure_confidence=(primary.profile or {}).get("structureConfidence"),
     )
     spec, planner = plan_dashboard(ctx, llm=get_planner_llm())
 

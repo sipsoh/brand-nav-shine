@@ -94,6 +94,13 @@ PAGE = """<!doctype html>
   .srcline:hover { color: var(--accent); }
   .srcline .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+  /* Low structure-confidence notice — mirrors app/services/confidence.py. */
+  .confidence-notice { margin-top: 16px; width: 100%; display: flex; gap: 10px; align-items: flex-start;
+                        border: 1px solid #fde68a; background: #fffbeb; border-radius: var(--radius);
+                        padding: 13px 18px; text-align: left; cursor: pointer; font: inherit; }
+  .confidence-notice .icon { color: #d97706; margin-top: 1px; }
+  .confidence-notice .txt { font-size: 13.5px; color: #78350f; }
+
   /* Exec summary strip */
   .exec { margin-top: 16px; background: linear-gradient(90deg, #e9f7f0, #f3f9e8);
           border: 1px solid #d9eede; border-radius: var(--radius); padding: 16px 22px;
@@ -285,6 +292,25 @@ for (const widget of kpis) {
   kpiGrid.appendChild(card);
 }
 sheet.appendChild(kpiGrid);
+
+// ---- low structure-confidence notice ----
+const lowConfidenceSource = spec.dataSources.find(
+  (s) => typeof s.structureConfidence === 'number' && s.structureConfidence < 0.6
+);
+if (lowConfidenceSource) {
+  const notice = el('button', 'confidence-notice');
+  notice.appendChild(el('span', 'icon', '⚠'));
+  const txt = el('span', 'txt');
+  const label = el('b', null,
+    `We had to guess at the structure of "${lowConfidenceSource.displayName}"`);
+  txt.appendChild(label);
+  txt.appendChild(document.createTextNode(
+    ` (${Math.round(lowConfidenceSource.structureConfidence * 100)}% confidence). ` +
+    'Double-check the numbers — see Sources & assumptions for what we assumed.'));
+  notice.appendChild(txt);
+  notice.onclick = () => document.getElementById('ov-sources').classList.add('open');
+  sheet.appendChild(notice);
+}
 
 // ---- exec summary strip ----
 if (execText && execText.markdown) {

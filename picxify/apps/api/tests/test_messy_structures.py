@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from app.services.normalization import normalize_table
-from app.services.parser import add_union_candidates, parse_csv, parse_excel
+from app.services.parser import RawTable, add_join_candidates, add_union_candidates, parse_csv, parse_excel
 
 
 def excel_bytes(grid: list[list], sheet: str = "Sheet1", extra: dict | None = None) -> bytes:
@@ -488,6 +488,90 @@ def test_ohlc_open_is_not_engagement():
     mapping = map_dataset([TableInput("prices", columns)], filename="stock_prices.csv", llm=None)
     assert mapping.column_mappings["Open"].semantic_type == "other"
     assert mapping.column_mappings["Close"].semantic_type == "other"
+
+
+def test_join_candidate_enriches_fact_with_dimension_columns():
+    orders = pd.DataFrame(
+        {
+            "order_id": [f"O{i}" for i in range(20)],
+            "customer_id": [f"C{i % 6}" for i in range(20)],
+            "amount": [float(i) for i in range(20)],
+        }
+    )
+    customers = pd.DataFrame(
+        {
+            "customer_id": [f"C{i}" for i in range(6)],
+            "name": [f"Customer {i}" for i in range(6)],
+        }
+    )
+    tables = add_join_candidates([RawTable("Orders", orders), RawTable("Customers", customers)])
+    names = [t.name for t in tables]
+    assert "Orders + Customers (joined)" in names
+    joined = next(t for t in tables if t.name == "Orders + Customers (joined)")
+    assert len(joined.dataframe) == 20  # fact row count preserved, no fan-out
+    assert "Customers: name" in joined.dataframe.columns
+    kinds = {n.finding_type for n in joined.notes}
+    assert "relational_join_applied" in kinds
+
+
+def test_join_skipped_for_coincidental_column_name_unrelated_values():
+    # Both have an 'id' column, but the value domains don't overlap at all —
+    # a same-named column from two unrelated systems must not be joined.
+    left = pd.DataFrame({"id": [f"L{i}" for i in range(10)], "value": range(10)})
+    right = pd.DataFrame({"id": [f"R{i}" for i in range(10)], "label": list("abcdefghij")})
+    tables = add_join_candidates([RawTable("Left", left), RawTable("Right", right)])
+    assert len(tables) == 2  # no join candidate added
+
+
+def test_join_skipped_when_dimension_key_is_not_unique_enough():
+    # 'category' repeats heavily on BOTH sides -> neither is a real key.
+    left = pd.DataFrame({"category": (["A", "B"] * 10), "value": range(20)})
+    right = pd.DataFrame({"category": (["A", "B"] * 5), "extra": range(10)})
+    tables = add_join_candidates([RawTable("Left", left), RawTable("Right", right)])
+    assert len(tables) == 2
+
+
+def test_join_skipped_for_row_aligned_companion_sheet():
+    # A helper/pivot-support sheet built alongside the main sheet (same row
+    # count, unique per-row values) is NOT a dimension — joining it in just
+    # bolts unrelated helper columns onto the real table. Real customer data
+    # hit this: a 'NEW DATA SHEET' with ~as many rows as 'Tickets' sharing a
+    # unique 'Number' column (both derived from the same underlying rows).
+    main = pd.DataFrame(
+        {
+            "Number": [f"T{i}" for i in range(200)],
+            "Duration": [float(i) for i in range(200)],
+        }
+    )
+    helper = pd.DataFrame(
+        {
+            "Number": [f"T{i}" for i in range(198)],  # unique, near-total containment
+            "Resolution Category": ["A", "B"] * 99,
+        }
+    )
+    tables = add_join_candidates([RawTable("Tickets", main), RawTable("Helper Sheet", helper)])
+    assert len(tables) == 2  # no join: helper is nearly as large as the fact table
+
+
+def test_join_skipped_for_identical_schema_tables():
+    # Same columns on both sides is a union candidate, not a join.
+    a = pd.DataFrame({"id": [f"A{i}" for i in range(10)], "value": range(10)})
+    b = pd.DataFrame({"id": [f"B{i}" for i in range(10)], "value": range(10)})
+    tables = add_join_candidates([RawTable("A", a), RawTable("B", b)])
+    assert len(tables) == 2
+
+
+def test_join_candidates_capped():
+    # Many mutually-joinable table pairs must not explode the candidate list.
+    base = pd.DataFrame({"key": [f"K{i}" for i in range(20)], "value": range(20)})
+    dims = [
+        pd.DataFrame({"key": [f"K{i}" for i in range(20)], "label": [str(n)] * 20})
+        for n in range(8)
+    ]
+    tables = [RawTable("Fact", base)] + [RawTable(f"Dim{i}", d) for i, d in enumerate(dims)]
+    result = add_join_candidates(tables)
+    joined_count = sum(1 for t in result if "joined" in t.name)
+    assert joined_count <= 4
 
 
 def test_unpivot_requires_three_periods_and_numeric_bodies():

@@ -11,6 +11,7 @@ Normalization and profiling happen downstream — this layer only extracts
 well-formed tables.
 """
 
+import logging
 import re
 import tempfile
 from dataclasses import dataclass, field
@@ -21,6 +22,8 @@ import duckdb
 import pandas as pd
 
 from app.services.normalization import TransformNote
+
+logger = logging.getLogger(__name__)
 
 
 class ParseError(Exception):
@@ -43,6 +46,13 @@ def parse_file(filename: str, data: bytes) -> list[RawTable]:
         return [parse_csv(filename, data)]
     if extension in {".xlsx", ".xls"}:
         return parse_excel(filename, data)
+    if extension == ".pdf":
+        tables = parse_pdf(filename, data)
+        if not tables:
+            tables = parse_pdf_with_ocr(filename, data)
+        if not tables:
+            raise ParseError("We could not detect a table in this PDF.")
+        return tables
     raise ParseError(f"Unsupported file type: {extension or 'unknown'}.")
 
 
@@ -143,12 +153,220 @@ def parse_excel(filename: str, data: bytes) -> list[RawTable]:
     return tables
 
 
+def parse_pdf(filename: str, data: bytes) -> list[RawTable]:
+    """Extract tables from a PDF's text layer, page by page. Each page's
+    table becomes a raw grid fed through the same `extract_tables()`
+    structure detector Excel uses — banners, header detection, and merged
+    headers all apply for free. A long table pdfplumber can only see one page
+    at a time comes back together automatically: same-schema page tables get
+    recombined by `add_union_candidates` downstream, exactly like per-month
+    Excel tabs.
+
+    Pages with no extractable table AND no extractable text are scanned
+    images; `parse_pdf_with_ocr` (used by dataset_pipeline when this returns
+    nothing but the file has pages) picks those up via OCR.
+    """
+    import pdfplumber
+
+    try:
+        pdf = pdfplumber.open(BytesIO(data))
+    except Exception as error:
+        raise ParseError("We could not read this PDF.") from error
+
+    tables: list[RawTable] = []
+    try:
+        for page_number, page in enumerate(pdf.pages, start=1):
+            page_tables = page.extract_tables()
+            for table_index, raw_rows in enumerate(page_tables, start=1):
+                grid = _pdf_table_to_grid(raw_rows)
+                if grid is None:
+                    continue
+                label = (
+                    f"Page {page_number}"
+                    if len(page_tables) == 1
+                    else f"Page {page_number} table {table_index}"
+                )
+                extracted = extract_tables(label, grid)
+                for table in extracted:
+                    table.notes.append(
+                        TransformNote(
+                            finding_type="table_from_pdf",
+                            severity="info",
+                            message=f"Extracted from the PDF's text layer ({label}).",
+                            meta={"page": page_number},
+                        )
+                    )
+                tables.extend(extracted)
+    finally:
+        pdf.close()
+
+    # Combining same-schema page tables (a table pdfplumber can only see one
+    # page at a time) happens once, centrally, in dataset_pipeline — the same
+    # place per-sheet Excel tabs get combined.
+    return tables
+
+
+def count_pdf_pages(data: bytes) -> int:
+    import pdfplumber
+
+    with pdfplumber.open(BytesIO(data)) as pdf:
+        return len(pdf.pages)
+
+
+def _ocr_available() -> bool:
+    import pytesseract
+
+    try:
+        pytesseract.get_tesseract_version()
+        return True
+    except Exception:
+        return False
+
+
+OCR_RESOLUTION = 200
+OCR_MIN_CONFIDENCE = 20  # tesseract's 0-100 per-word confidence
+
+
+def parse_pdf_with_ocr(filename: str, data: bytes) -> list[RawTable]:
+    """Scanned pages have no text layer at all — `parse_pdf` finds nothing on
+    them. Render each such page to an image and reconstruct a grid from
+    tesseract's word-level bounding boxes (rows by line, columns by
+    x-position clustering), then run it through the same structure detector
+    everything else uses. OCR is inherently less reliable, so every table
+    this produces carries an extra confidence penalty (`table_from_ocr`).
+
+    Never raises: an environment without tesseract, or a page OCR can't make
+    sense of, degrades to "no tables from this page," not a crash.
+    """
+    if not _ocr_available():
+        return []
+    import pdfplumber
+
+    tables: list[RawTable] = []
+    try:
+        with pdfplumber.open(BytesIO(data)) as pdf:
+            for page_number, page in enumerate(pdf.pages, start=1):
+                if (page.extract_text() or "").strip():
+                    continue  # has a real text layer; parse_pdf already covers it
+                grid = _ocr_page_to_grid(page)
+                if grid is None:
+                    continue
+                label = f"Page {page_number} (scanned)"
+                extracted = extract_tables(label, grid)
+                for table in extracted:
+                    table.notes.append(
+                        TransformNote(
+                            finding_type="table_from_ocr",
+                            severity="warning",
+                            message=(
+                                f"Extracted via OCR from a scanned page ({label}) — "
+                                "double-check these values."
+                            ),
+                            meta={"page": page_number},
+                        )
+                    )
+                tables.extend(extracted)
+    except Exception:
+        logger.exception("OCR extraction failed for %s; returning partial results.", filename)
+    return tables
+
+
+def _ocr_page_to_grid(page) -> pd.DataFrame | None:
+    import pytesseract
+    from pytesseract import Output
+
+    image = page.to_image(resolution=OCR_RESOLUTION).original
+    ocr = pytesseract.image_to_data(image, output_type=Output.DATAFRAME)
+    words = ocr[ocr["text"].notna()].copy()
+    words["conf"] = pd.to_numeric(words["conf"], errors="coerce")
+    words = words[(words["conf"] > OCR_MIN_CONFIDENCE) & (words["text"].str.strip() != "")]
+    if words.empty:
+        return None
+
+    # Rows by y-position, not tesseract's own (block, paragraph, line)
+    # grouping: a wide gutter between columns makes tesseract's page
+    # segmentation see two separate vertical "blocks," which would put an
+    # entire column's words before the other column's instead of row by row.
+    median_height = words["height"].median() or 20
+    row_tolerance = median_height * 0.6
+    by_top = words.sort_values("top")
+    row_groups: list[list[int]] = []
+    row_tops: list[float] = []
+    for idx, top in zip(by_top.index, by_top["top"]):
+        if row_groups and abs(top - row_tops[-1]) <= row_tolerance:
+            row_groups[-1].append(idx)
+            row_tops[-1] = words.loc[row_groups[-1], "top"].mean()
+        else:
+            row_groups.append([idx])
+            row_tops.append(float(top))
+
+    # Columns: cluster word left-edges by gap — a real column break shows up
+    # as a much bigger horizontal gap than the space between words in a cell.
+    lefts = sorted(words["left"].tolist())
+    median_width = words["width"].median() or 20
+    gap_threshold = max(30, median_width * 2)
+    clusters: list[list[float]] = [[lefts[0]]]
+    for x in lefts[1:]:
+        if x - clusters[-1][-1] > gap_threshold:
+            clusters.append([x])
+        else:
+            clusters[-1].append(x)
+    centers = [sum(c) / len(c) for c in clusters]
+    if len(centers) < 2:
+        return None  # a single text blob, not a table
+
+    def column_for(x: float) -> int:
+        return min(range(len(centers)), key=lambda i: abs(centers[i] - x))
+
+    rows: list[list[str | None]] = []
+    for indices in row_groups:
+        cells: list[str | None] = [None] * len(centers)
+        for _, word in words.loc[indices].sort_values("left").iterrows():
+            index = column_for(word["left"])
+            cells[index] = f"{cells[index]} {word['text']}" if cells[index] else word["text"]
+        rows.append(cells)
+
+    grid = pd.DataFrame(rows)
+    if grid.dropna(how="all").empty:
+        return None
+    return grid
+
+
+def _pdf_table_to_grid(rows: list[list]) -> pd.DataFrame | None:
+    if not rows:
+        return None
+    cleaned = [
+        [_clean_pdf_cell(cell) for cell in row]
+        for row in rows
+    ]
+    grid = pd.DataFrame(cleaned)
+    if grid.dropna(how="all").empty:
+        return None
+    return grid
+
+
+def _clean_pdf_cell(value):
+    if value is None:
+        return None
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    return text if text else None
+
+
+def _is_pdf_page_table(table: RawTable) -> bool:
+    return any(n.finding_type == "table_from_pdf" for n in table.notes)
+
+
 def add_union_candidates(tables: list[RawTable]) -> list[RawTable]:
     """Workbooks often split ONE dataset across many same-schema sheets
-    (per-month tabs, per-region tabs). When >= 3 sheets share an identical
-    column signature, add a combined table with a 'Source Sheet' column as an
-    extra candidate — table scoring decides whether it becomes the dashboard
-    base. Original tables are always kept."""
+    (per-month tabs, per-region tabs); a PDF table pdfplumber can only see one
+    page at a time is the same shape of problem. When several tables share an
+    identical column signature, add a combined table with a provenance column
+    as an extra candidate — table scoring decides whether it becomes the
+    dashboard base. Original tables are always kept.
+
+    PDF page tables union at >= 2 (a page break is an extraction artifact,
+    not a deliberate split — unlike two Excel sheets, which need >= 3 to rule
+    out coincidental same-shaped-but-unrelated tabs)."""
     groups: dict[tuple, list[RawTable]] = {}
     for table in tables:
         signature = tuple(str(c) for c in table.dataframe.columns)
@@ -157,7 +375,10 @@ def add_union_candidates(tables: list[RawTable]) -> list[RawTable]:
 
     combined: list[RawTable] = []
     for signature, members in groups.items():
-        if len(members) < 3 or "Source Sheet" in signature:
+        if "Source Sheet" in signature or "Page" in signature:
+            continue
+        from_pdf = all(_is_pdf_page_table(m) for m in members)
+        if len(members) < (2 if from_pdf else 3):
             continue
         # Master-plus-filtered-views workbooks (a 'Tickets' sheet and per-
         # category tabs holding the SAME rows) must not be double-counted:
@@ -169,26 +390,28 @@ def add_union_candidates(tables: list[RawTable]) -> list[RawTable]:
             continue
         if duplicate_ratio > 0.02:
             continue
+        provenance_column = "Page" if from_pdf else "Source Sheet"
         frames = []
         for member in members:
             frame = member.dataframe.copy()
-            frame.insert(0, "Source Sheet", member.name)
+            frame.insert(0, provenance_column, member.name)
             frames.append(frame)
         union = pd.concat(frames, ignore_index=True)
         names = [m.name for m in members]
+        noun = "pages" if from_pdf else "sheets"
         combined.append(
             RawTable(
-                name=f"Combined ({len(members)} sheets)",
+                name=f"Combined ({len(members)} {noun})",
                 dataframe=union,
                 notes=[
                     TransformNote(
                         finding_type="sheets_combined",
                         severity="info",
                         message=(
-                            f"{len(members)} sheets share the same columns and were "
+                            f"{len(members)} {noun} share the same columns and were "
                             f"also combined into one table ({', '.join(names[:6])}"
                             + ("…" if len(names) > 6 else "")
-                            + "). A 'Source Sheet' column says where each row came from."
+                            + f"). A '{provenance_column}' column says where each row came from."
                         ),
                         meta={"sheets": names},
                     )
@@ -196,6 +419,147 @@ def add_union_candidates(tables: list[RawTable]) -> list[RawTable]:
             )
         )
     return tables + combined
+
+
+MAX_JOIN_CANDIDATES = 4
+JOIN_KEY_UNIQUE_RATIO = 0.95  # how unique a column must be to act as a dimension's key
+JOIN_CONTAINMENT_RATIO = 0.8  # how much of the fact's keys must exist in the dimension
+JOIN_MIN_DISTINCT_KEYS = 3  # a 2-value column ("Yes"/"No") is not a real key
+# A real dimension collapses many fact rows down to few categories (orders
+# -> customers, deals -> reps). Two sheets with near-equal row counts are
+# more likely row-aligned companion/helper sheets (a pivot-support tab built
+# alongside the main sheet) than a genuine fact/dimension pair, even if a
+# column between them happens to look unique — joining those just bolts
+# unrelated helper columns onto the real table.
+JOIN_MAX_DIMENSION_TO_FACT_ROWS = 0.5
+
+
+def add_join_candidates(tables: list[RawTable]) -> list[RawTable]:
+    """Detect a primary-key/foreign-key relationship between two tables (an
+    'orders' fact table and a 'customers' dimension table sharing a customer
+    id) and add the enriched join as an extra candidate — same pattern as
+    add_union_candidates: original tables are always kept, table scoring
+    picks the winner. Works whether the tables came from one workbook or
+    several uploaded files.
+
+    Safety: a dimension key must be near-unique (so the join can never fan
+    out and multiply the fact table's rows) and the fact's values must
+    mostly exist in the dimension (so a coincidental same-named column on
+    unrelated data — 'id' meaning different things in two systems — doesn't
+    produce a nonsense join).
+    """
+    joined: list[RawTable] = []
+    for i, left in enumerate(tables):
+        if len(joined) >= MAX_JOIN_CANDIDATES:
+            break
+        for right in tables[i + 1 :]:
+            if len(joined) >= MAX_JOIN_CANDIDATES:
+                break
+            candidate = _join_pair(left, right)
+            if candidate is not None:
+                joined.append(candidate)
+    return tables + joined
+
+
+def _shared_key_columns(left: pd.DataFrame, right: pd.DataFrame) -> list[tuple[str, str]]:
+    def norm(name) -> str:
+        return re.sub(r"[^a-z0-9]", "", str(name).lower())
+
+    right_by_norm: dict[str, str] = {}
+    for column in right.columns:
+        right_by_norm.setdefault(norm(column), str(column))
+    pairs = []
+    for column in left.columns:
+        match = right_by_norm.get(norm(column))
+        if match is not None:
+            pairs.append((str(column), match))
+    return pairs
+
+
+def _key_quality(series: pd.Series) -> tuple[float, int]:
+    non_null = series.dropna()
+    if len(non_null) < JOIN_MIN_DISTINCT_KEYS:
+        return 0.0, 0
+    try:
+        distinct = non_null.nunique()
+    except TypeError:
+        return 0.0, 0  # unhashable values
+    return distinct / len(non_null), distinct
+
+
+def _join_pair(left: RawTable, right: RawTable) -> RawTable | None:
+    left_df, right_df = left.dataframe, right.dataframe
+    if left_df.shape[1] == right_df.shape[1] and list(left_df.columns) == list(right_df.columns):
+        return None  # identical schema -> a union candidate, not a join
+
+    best = None  # (containment, dimension_side, key_left, key_right)
+    for key_left, key_right in _shared_key_columns(left_df, right_df):
+        left_ratio, left_distinct = _key_quality(left_df[key_left])
+        right_ratio, right_distinct = _key_quality(right_df[key_right])
+        if left_distinct < JOIN_MIN_DISTINCT_KEYS or right_distinct < JOIN_MIN_DISTINCT_KEYS:
+            continue
+        # The dimension side is whichever is (more) unique; it must clear the
+        # bar outright, or a join would risk fanning out the other side.
+        if left_ratio >= JOIN_KEY_UNIQUE_RATIO and left_ratio >= right_ratio:
+            dimension, fact, dim_key, fact_key = left, right, key_left, key_right
+        elif right_ratio >= JOIN_KEY_UNIQUE_RATIO:
+            dimension, fact, dim_key, fact_key = right, left, key_right, key_left
+        else:
+            continue
+        if len(dimension.dataframe) > len(fact.dataframe) * JOIN_MAX_DIMENSION_TO_FACT_ROWS:
+            continue  # not dimension-shaped: likely a row-aligned companion sheet
+        fact_values = fact.dataframe[fact_key].dropna()
+        dim_values = set(dimension.dataframe[dim_key].dropna())
+        if len(fact_values) == 0 or not dim_values:
+            continue
+        try:
+            containment = fact_values.isin(dim_values).mean()
+        except TypeError:
+            continue
+        if containment < JOIN_CONTAINMENT_RATIO:
+            continue
+        if best is None or containment > best[0]:
+            best = (containment, dimension, fact, dim_key, fact_key)
+
+    if best is None:
+        return None
+    containment, dimension, fact, dim_key, fact_key = best
+
+    dim_df = dimension.dataframe.drop_duplicates(subset=[dim_key], keep="first")
+    other_columns = [c for c in dim_df.columns if c != dim_key]
+    rename = {c: f"{dimension.name}: {c}" for c in other_columns}
+    enrich = dim_df[[dim_key, *other_columns]].rename(columns=rename)
+    merged = fact.dataframe.merge(
+        enrich, left_on=fact_key, right_on=dim_key if dim_key == fact_key else dim_key,
+        how="left", suffixes=("", f" ({dimension.name})"),
+    )
+    if dim_key != fact_key and dim_key in merged.columns:
+        merged = merged.drop(columns=[dim_key])
+    if len(merged) != len(fact.dataframe):
+        return None  # guard tripped in practice (a near-unique key wasn't unique enough)
+
+    return RawTable(
+        name=f"{fact.name} + {dimension.name} (joined)",
+        dataframe=merged,
+        notes=[
+            TransformNote(
+                finding_type="relational_join_applied",
+                severity="info",
+                message=(
+                    f"Joined '{fact.name}' to '{dimension.name}' on "
+                    f"{fact_key} = {dim_key} ({containment * 100:.0f}% of rows matched) "
+                    f"to enrich it with {dimension.name}'s columns."
+                ),
+                meta={
+                    "factTable": fact.name,
+                    "dimensionTable": dimension.name,
+                    "factKey": fact_key,
+                    "dimensionKey": dim_key,
+                    "containment": round(float(containment), 4),
+                },
+            )
+        ],
+    )
 
 
 # --- sheet structure detection ---------------------------------------------

@@ -67,6 +67,22 @@ def upload_file(client, storage, workspace_id) -> str:
     return presigned["fileId"]
 
 
+def upload_bytes(client, storage, workspace_id, filename: str, data: bytes) -> str:
+    presigned = client.post(
+        "/uploads/presign",
+        json={
+            "workspaceId": workspace_id,
+            "filename": filename,
+            "mimeType": "text/csv",
+            "sizeBytes": len(data),
+        },
+    ).json()
+    storage.objects[presigned["objectKey"]] = data
+    completed = client.post(f"/uploads/{presigned['fileId']}/complete")
+    assert completed.json()["status"] == "uploaded"
+    return presigned["fileId"]
+
+
 def run_dispatched_jobs(storage, dispatched) -> None:
     session = TestingSession()
     try:
@@ -110,6 +126,46 @@ def test_full_flow_upload_to_profile(harness):
     assert types["campaign"] == "category"
     assert types["date"] in {"date", "datetime"}
     assert len(table["sampleRows"]) == 5
+
+
+def test_multi_file_dataset_joins_related_tables(harness):
+    client, storage, dispatched, workspace_id = harness
+    orders_csv = b"order_id,customer_id,amount\n" + b"".join(
+        f"O{i},C{i % 5},{i * 10}.00\n".encode() for i in range(30)
+    )
+    customers_csv = b"customer_id,name,region\n" + b"".join(
+        f"C{i},Customer {i},{'West' if i % 2 else 'East'}\n".encode() for i in range(5)
+    )
+    orders_id = upload_bytes(client, storage, workspace_id, "orders.csv", orders_csv)
+    customers_id = upload_bytes(client, storage, workspace_id, "customers.csv", customers_csv)
+
+    created = client.post(
+        "/datasets/from-file",
+        json={
+            "workspaceId": workspace_id,
+            "fileId": orders_id,
+            "fileIds": [orders_id, customers_id],
+            "name": "Orders + Customers",
+        },
+    )
+    assert created.status_code == 200
+    body = created.json()
+    run_dispatched_jobs(storage, dispatched)
+
+    job = client.get(f"/jobs/{body['jobId']}").json()
+    assert job["status"] == "succeeded"
+
+    dataset = client.get(f"/datasets/{body['datasetId']}").json()
+    table_names = {t["name"] for t in dataset["tables"]}
+    assert "orders" in table_names
+    assert "customers" in table_names
+    joined = [n for n in table_names if "joined" in n]
+    assert joined, f"expected a joined table candidate among {table_names}"
+    joined_table = next(t for t in dataset["tables"] if t["name"] == joined[0])
+    assert joined_table["rowCount"] == 30  # fact row count preserved, no fan-out
+    joined_columns = {c["name"] for c in joined_table["columns"]}
+    assert any("name" in c for c in joined_columns)
+    assert any("region" in c for c in joined_columns)
 
 
 def test_from_file_rejects_pending_upload(harness):

@@ -21,8 +21,12 @@ FIXTURES = Path(__file__).resolve().parents[3] / "packages" / "sample-data" / "c
 # Per-fixture expectations: the "golden" behavior this harness protects.
 EXPECTATIONS = {
     "saas_sales_pipeline.xlsx": {
+        # This workbook also has a small 'Reps' sheet (Owner -> Quota, one
+        # row per rep). The join engine now recognizes it as a real
+        # dimension and enriches Pipeline with quota context — a genuine
+        # improvement over the plain Pipeline sheet, not a regression.
         "use_case": "sales",
-        "primary_sheet": "Pipeline",
+        "primary_sheet": "Pipeline + Rep Quotas (joined)",
         "required_kpi_tokens": ["deal amount", "win rate"],
         "chart_aggregations_forbidden": [],
     },
@@ -234,6 +238,38 @@ EXPECTATIONS = {
         "required_kpi_tokens": ["total volume"],
         "chart_aggregations_forbidden": [("Open", "sum"), ("Close", "sum")],
     },
+    "pdf_revenue_report.pdf": {
+        # A clean single-page PDF export: digital text-layer table extraction.
+        "use_case": None,
+        "primary_sheet": "Page 1",
+        "required_kpi_tokens": ["total revenue"],
+        "chart_aggregations_forbidden": [],
+    },
+    "pdf_multipage_orders.pdf": {
+        # A table pdfplumber only sees one page at a time; pages must
+        # recombine into a single 140-row table.
+        "use_case": None,
+        "primary_sheet": "Combined (5 pages)",
+        "required_kpi_tokens": ["total amount"],
+        "chart_aggregations_forbidden": [],
+    },
+    "scanned_donation_summary.pdf": {
+        # No text layer at all — OCR fallback, and the low-confidence banner
+        # must trip (checked separately, not via this token-based harness).
+        "use_case": None,
+        "primary_sheet": "Page 1 (scanned)",
+        "required_kpi_tokens": ["total amount"],
+        "chart_aggregations_forbidden": [],
+    },
+    ("join_orders.csv", "join_customers.csv"): {
+        # Two related files uploaded together: orders (fact) + customers
+        # (dimension) must join, enriching orders with segment/name.
+        "dataset_name": "Orders + Customers",
+        "use_case": None,
+        "primary_sheet": "join_orders + join_customers (joined)",
+        "required_kpi_tokens": ["total amount"],
+        "chart_aggregations_forbidden": [],
+    },
 }
 
 
@@ -249,9 +285,25 @@ class FakeStorage:
 
 
 def run_fixture(filename: str, data: bytes) -> dict:
+    return run_multi_file_fixture([(filename, data)])
+
+
+def run_multi_file_fixture(files: list[tuple[str, bytes]], name: str | None = None) -> dict:
+    """Like run_fixture, but for a dataset built from several files at once
+    (the multi-file-join case) — mirrors what POST /datasets/from-file with
+    fileIds does, minus the HTTP layer."""
     from app import models  # noqa: F401
     from app.db import Base
-    from app.models import Dashboard, DashboardVersion, Dataset, GenerationJob, UploadedFile, User, Workspace
+    from app.models import (
+        Dashboard,
+        DashboardVersion,
+        Dataset,
+        DatasetFile,
+        GenerationJob,
+        UploadedFile,
+        User,
+        Workspace,
+    )
     from app.services.dashboard_pipeline import run_generate_dashboard
     from app.services.dataset_pipeline import run_parse_dataset
 
@@ -268,26 +320,34 @@ def run_fixture(filename: str, data: bytes) -> dict:
     workspace = Workspace(name="Evals", created_by=user.id)
     db.add(workspace)
     db.flush()
-    storage.objects["upload"] = data
-    uploaded = UploadedFile(
-        workspace_id=workspace.id,
-        uploaded_by=user.id,
-        original_filename=filename,
-        size_bytes=len(data),
-        object_key="upload",
-        status="uploaded",
-    )
-    db.add(uploaded)
-    db.flush()
+
+    dataset_name = name or files[0][0].rsplit(".", 1)[0].replace("_", " ").title()
     dataset = Dataset(
         workspace_id=workspace.id,
-        file_id=uploaded.id,
-        name=filename.rsplit(".", 1)[0].replace("_", " ").title(),
         source_type="file",
+        name=dataset_name,
         created_by=user.id,
     )
     db.add(dataset)
     db.flush()
+
+    for position, (filename, data) in enumerate(files):
+        object_key = f"upload-{position}"
+        storage.objects[object_key] = data
+        uploaded = UploadedFile(
+            workspace_id=workspace.id,
+            uploaded_by=user.id,
+            original_filename=filename,
+            size_bytes=len(data),
+            object_key=object_key,
+            status="uploaded",
+        )
+        db.add(uploaded)
+        db.flush()
+        if position == 0:
+            dataset.file_id = uploaded.id
+        db.add(DatasetFile(dataset_id=dataset.id, file_id=uploaded.id, position=position))
+
     parse_job = GenerationJob(
         workspace_id=workspace.id, user_id=user.id, dataset_id=dataset.id,
         job_type="parse_dataset",
@@ -365,9 +425,14 @@ def main() -> int:
     from app.services.spec_validator import assert_source_traces, validate_spec
 
     failures = 0
-    for filename, expect in EXPECTATIONS.items():
-        data = (FIXTURES / filename).read_bytes()
-        result = run_fixture(filename, data)
+    for key, expect in EXPECTATIONS.items():
+        # A tuple key is a multi-file fixture (e.g. orders.csv + customers.csv
+        # uploaded together, to prove the join/union candidate machinery).
+        multi = isinstance(key, tuple)
+        filenames = list(key) if multi else [key]
+        filename = " + ".join(filenames)
+        files = [(name, (FIXTURES / name).read_bytes()) for name in filenames]
+        result = run_multi_file_fixture(files, name=expect.get("dataset_name")) if multi else run_fixture(*files[0])
         if "error" in result:
             print(f"✗ {filename}: {result['error']}")
             failures += 1

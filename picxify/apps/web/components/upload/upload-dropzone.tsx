@@ -13,7 +13,7 @@ import {
 } from "@/lib/api-client";
 import { clerkEnabled } from "@/lib/auth";
 
-const ACCEPTED = ".csv,.tsv,.txt,.xlsx,.xls";
+const ACCEPTED = ".csv,.tsv,.txt,.xlsx,.xls,.pdf";
 const POLL_INTERVAL_MS = 1200;
 const POLL_TIMEOUT_MS = 120_000;
 
@@ -22,6 +22,11 @@ type Phase =
   | { step: "uploading"; label: string }
   | { step: "done"; datasetId: string; filename: string }
   | { step: "error"; message: string };
+
+function summarizeNames(files: File[]): string {
+  if (files.length === 1) return files[0].name;
+  return `${files.length} files (${files.map((f) => f.name).join(", ")})`;
+}
 
 async function pollJobUntilDone(
   getToken: () => Promise<string | null>,
@@ -90,33 +95,42 @@ function AuthedDropzone() {
     };
   }, [isLoaded, isSignedIn, getToken]);
 
-  const handleFile = useCallback(
-    async (file: File) => {
-      if (!workspaceId) return;
+  const handleFiles = useCallback(
+    async (files: File[]) => {
+      if (!workspaceId || files.length === 0) return;
+      const label = summarizeNames(files);
       try {
-        setPhase({ step: "uploading", label: "Requesting upload slot…" });
+        const fileIds: string[] = [];
+        for (const [index, file] of files.entries()) {
+          const prefix = files.length > 1 ? `File ${index + 1}/${files.length}: ` : "";
+          setPhase({ step: "uploading", label: `${prefix}Requesting upload slot…` });
+          const token = await getToken();
+          if (!token) throw new Error("No session token.");
+          const presigned = await presignUpload(token, {
+            workspaceId,
+            filename: file.name,
+            mimeType: file.type || "application/octet-stream",
+            sizeBytes: file.size,
+          });
+          setPhase({ step: "uploading", label: `${prefix}Uploading to secure storage…` });
+          await putToPresignedUrl(presigned.uploadUrl, file);
+          setPhase({ step: "uploading", label: `${prefix}Confirming upload…` });
+          const completed = await completeUpload(token, presigned.fileId);
+          fileIds.push(completed.fileId);
+        }
+        setPhase({ step: "uploading", label: "Reading file…" });
         const token = await getToken();
         if (!token) throw new Error("No session token.");
-        const presigned = await presignUpload(token, {
-          workspaceId,
-          filename: file.name,
-          mimeType: file.type || "application/octet-stream",
-          sizeBytes: file.size,
-        });
-        setPhase({ step: "uploading", label: "Uploading to secure storage…" });
-        await putToPresignedUrl(presigned.uploadUrl, file);
-        setPhase({ step: "uploading", label: "Confirming upload…" });
-        const completed = await completeUpload(token, presigned.fileId);
-        setPhase({ step: "uploading", label: "Reading file…" });
         const dataset = await createDatasetFromFile(token, {
           workspaceId,
-          fileId: completed.fileId,
-          name: file.name.replace(/\.[^.]+$/, ""),
+          fileId: fileIds[0],
+          fileIds,
+          name: files.length === 1 ? files[0].name.replace(/\.[^.]+$/, "") : label,
         });
-        await pollJobUntilDone(getToken, dataset.jobId, (label) =>
-          setPhase({ step: "uploading", label }),
+        await pollJobUntilDone(getToken, dataset.jobId, (step) =>
+          setPhase({ step: "uploading", label: step }),
         );
-        setPhase({ step: "done", datasetId: dataset.datasetId, filename: file.name });
+        setPhase({ step: "done", datasetId: dataset.datasetId, filename: label });
       } catch (error) {
         const message =
           error instanceof Error && error.message
@@ -184,8 +198,8 @@ function AuthedDropzone() {
         onDrop={(event) => {
           event.preventDefault();
           setDragging(false);
-          const file = event.dataTransfer.files?.[0];
-          if (file) void handleFile(file);
+          const files = Array.from(event.dataTransfer.files ?? []);
+          if (files.length) void handleFiles(files);
         }}
         className={`flex h-56 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed bg-white px-8 text-center transition-colors ${
           dragging ? "border-neutral-900 bg-neutral-50" : "border-neutral-300"
@@ -196,9 +210,12 @@ function AuthedDropzone() {
         ) : (
           <>
             <p className="font-medium text-neutral-900">
-              Drop a CSV or Excel file here, or click to browse
+              Drop CSV or Excel files here, or click to browse
             </p>
-            <p className="text-sm text-neutral-500">CSV, TSV, TXT, XLSX, XLS — up to 10 MB</p>
+            <p className="text-sm text-neutral-500">
+              CSV, TSV, TXT, XLSX, XLS, PDF — up to 10 MB each. Drop several related files
+              (e.g. orders + customers) to combine or join them automatically.
+            </p>
           </>
         )}
       </div>
@@ -206,10 +223,11 @@ function AuthedDropzone() {
         ref={inputRef}
         type="file"
         accept={ACCEPTED}
+        multiple
         className="hidden"
         onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) void handleFile(file);
+          const files = Array.from(event.target.files ?? []);
+          if (files.length) void handleFiles(files);
           event.target.value = "";
         }}
       />

@@ -58,6 +58,7 @@ class PlanningContext:
     date_grain: str | None
     title_hint: str | None = None
     extra_metadata: dict = field(default_factory=dict)
+    structure_confidence: float | None = None
 
 
 def plan_dashboard(ctx: PlanningContext, llm: LLMClient | None) -> tuple[dict, str]:
@@ -205,21 +206,26 @@ def build_fallback_spec(ctx: PlanningContext) -> dict:
             "theme": {"name": "picxify-default", "tone": ctx.template.get("tone", "polished")},
             "generatedAt": datetime.now(timezone.utc).isoformat(),
         },
-        "dataSources": [
-            {
-                "datasetId": ctx.dataset_id,
-                "tableId": ctx.table_id,
-                "displayName": ctx.table_name,
-                "rowCount": ctx.row_count,
-                "columnCount": ctx.column_count,
-                "snapshotUri": ctx.snapshot_uri,
-            }
-        ],
+        "dataSources": _data_sources(ctx),
         "assumptions": ctx.assumptions,
         "sections": sections,
         "insights": [to_spec_insight(i) for i in ctx.insights[:MAX_SPEC_INSIGHTS]],
         "actions": _actions(ctx),
     }
+
+
+def _data_sources(ctx: PlanningContext) -> list[dict]:
+    return [
+        {
+            "datasetId": ctx.dataset_id,
+            "tableId": ctx.table_id,
+            "displayName": ctx.table_name,
+            "rowCount": ctx.row_count,
+            "columnCount": ctx.column_count,
+            "snapshotUri": ctx.snapshot_uri,
+            "structureConfidence": ctx.structure_confidence,
+        }
+    ]
 
 
 def _kpi_widget(widget_id: str, title: str, fact: dict, *, value=None,
@@ -650,6 +656,7 @@ def _enforce_guards(ctx: PlanningContext, spec: dict) -> dict:
     KPIs only, code-built charts only."""
     spec["version"] = SPEC_VERSION
     spec["dashboard"]["generatedAt"] = datetime.now(timezone.utc).isoformat()
+    spec["dataSources"] = _data_sources(ctx)  # never LLM-authored
 
     known_insights = {i["id"]: to_spec_insight(i) for i in ctx.insights}
     spec["insights"] = [

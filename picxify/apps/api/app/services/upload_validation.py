@@ -5,7 +5,7 @@ from fastapi import HTTPException, status
 
 # MVP input types (SETUP.md §2.1). Macro-enabled Office formats are rejected
 # outright (§17.4) rather than stripped.
-ALLOWED_EXTENSIONS = {".csv", ".tsv", ".txt", ".xlsx", ".xls"}
+ALLOWED_EXTENSIONS = {".csv", ".tsv", ".txt", ".xlsx", ".xls", ".pdf"}
 REJECTED_EXTENSIONS = {".xlsm", ".xlsb", ".xltm", ".docm", ".exe", ".js", ".sh", ".bat"}
 
 ALLOWED_MIME_PREFIXES = (
@@ -14,6 +14,7 @@ ALLOWED_MIME_PREFIXES = (
     "text/plain",
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/pdf",
     "application/octet-stream",  # browsers often send this for CSVs
 )
 
@@ -35,7 +36,7 @@ def validate_upload(filename: str, mime_type: str | None, size_bytes: int, max_m
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail=(
                 "This file type is not supported yet. "
-                "Upload a CSV, TSV, TXT, XLSX, or XLS file."
+                "Upload a CSV, TSV, TXT, XLSX, XLS, or PDF file."
             ),
         )
 

@@ -1,5 +1,39 @@
 # Changelog
 
+## Data engine round 4: confidence, multi-file joins, PDF/OCR, feedback loop (2026-07-02)
+
+Documented in `docs/engineering/data-engine.md`.
+
+- **Structure-detection confidence**: every table gets a `structureConfidence`
+  score computed from which structural findings fired on it (no header found,
+  inferred transpose, sheet/page union, relational join, OCR). Below 0.6, the
+  dashboard shows a visible amber banner naming the table and linking to
+  Sources & assumptions, backed by an auto-recorded assumption.
+- **Multi-file datasets**: a dashboard can now be built from several uploaded
+  files at once (`orders.csv` + `customers.csv`), not just one — new
+  `DatasetFile` model/migration, `fileIds` on `POST /datasets/from-file`, and
+  multi-file drag-and-drop in the upload UI.
+- **Relational join detection**: a near-unique key in one table matched
+  against a mostly-contained foreign key in another builds a safe left-join
+  candidate (no fan-out, guaranteed) enriching the fact table with the
+  dimension's columns. A cardinality guard (dimension ≤ 50% of fact's rows)
+  stops row-aligned companion/helper sheets from being mistaken for real
+  dimensions — caught and fixed against the real 21-sheet customer workbook
+  during testing.
+- **PDF ingestion**: digital PDFs extract tables from the text layer via
+  pdfplumber, reusing the same structure detector as Excel; multi-page tables
+  recombine automatically. Scanned PDFs with no text layer fall back to OCR
+  (tesseract), reconstructing rows/columns from word bounding boxes; OCR
+  tables always carry a heavy confidence penalty. `.pdf` now accepted at
+  upload.
+- **The feedback loop**: `scripts/promote_fixture.py` turns a user's
+  assumption correction into a promotable eval fixture — pulls the source
+  file(s) plus a plain-English account of what was corrected, so real
+  customer confusion can become a permanent regression test.
+- 4 new fixtures (digital PDF, multi-page PDF, scanned PDF, related-CSV pair):
+  34/34 evals; 174 tests. Real 21-sheet ticket workbook re-verified unchanged
+  after the join cardinality guard (7,581 unique tickets, no false join).
+
 ## Data engine round 3: the scattered-data catalog (2026-07-02)
 
 13 new torture fixtures modeled on real export formats (QuickBooks P&L, pivot

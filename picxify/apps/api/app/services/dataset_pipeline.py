@@ -9,17 +9,19 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from io import BytesIO
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.assumption import Assumption, AssumptionSource, AssumptionStatus
-from app.models.dataset import DataQualityFinding, Dataset, DatasetColumn, DatasetTable
+from app.models.dataset import DataQualityFinding, Dataset, DatasetColumn, DatasetFile, DatasetTable
 from app.models.job import GenerationJob, JobStatus
 from app.models.upload import FileStatus, UploadedFile
+from app.services.confidence import LOW_CONFIDENCE_THRESHOLD, compute_structure_confidence
 from app.services.llm import get_semantic_mapper_llm
 from app.services.normalization import normalize_table, snake_case
-from app.services.parser import ParseError, add_union_candidates, parse_file
+from app.services.parser import ParseError, add_join_candidates, add_union_candidates, parse_file
 from app.services.profiler import profile_table
 from app.services.semantic_mapper import ColumnInput, TableInput, map_dataset
 
@@ -41,38 +43,72 @@ def run_parse_dataset(db: Session, storage, dataset_id: uuid.UUID, job_id: uuid.
         logger.error("parse_dataset: missing job %s or dataset %s", job_id, dataset_id)
         return
 
-    uploaded_file = db.scalar(select(UploadedFile).where(UploadedFile.id == dataset.file_id))
+    uploaded_files = linked_files(db, dataset)
     try:
-        _run(db, storage, dataset, uploaded_file, job)
+        _run(db, storage, dataset, uploaded_files, job)
     except ParseError as error:
-        _fail(db, job, dataset, uploaded_file, str(error))
+        _fail(db, job, dataset, uploaded_files, str(error))
     except Exception:
         logger.exception("parse_dataset failed (job=%s dataset=%s)", job_id, dataset_id)
         _fail(
             db,
             job,
             dataset,
-            uploaded_file,
+            uploaded_files,
             "Something went wrong while processing this file. Please try again.",
         )
+
+
+def linked_files(db: Session, dataset: Dataset) -> list[UploadedFile]:
+    """Every file feeding this dataset, in upload order. Falls back to the
+    legacy single `dataset.file_id` pointer for datasets created before
+    multi-file datasets existed (or when the DatasetFile backfill hasn't run
+    in a test harness that builds its schema directly)."""
+    links = db.scalars(
+        select(DatasetFile).where(DatasetFile.dataset_id == dataset.id).order_by(DatasetFile.position)
+    ).all()
+    file_ids = [link.file_id for link in links] or (
+        [dataset.file_id] if dataset.file_id else []
+    )
+    if not file_ids:
+        return []
+    files_by_id = {
+        f.id: f for f in db.scalars(select(UploadedFile).where(UploadedFile.id.in_(file_ids))).all()
+    }
+    return [files_by_id[fid] for fid in file_ids if fid in files_by_id]
 
 
 def _run(
     db: Session,
     storage,
     dataset: Dataset,
-    uploaded_file: UploadedFile | None,
+    uploaded_files: list[UploadedFile],
     job: GenerationJob,
 ) -> None:
-    if uploaded_file is None:
-        raise ParseError("The uploaded file for this dataset no longer exists.")
+    if not uploaded_files:
+        raise ParseError("The uploaded file(s) for this dataset no longer exist.")
 
     job.status = JobStatus.RUNNING.value
     job.started_at = datetime.now(timezone.utc)
     _progress(db, job, *PROGRESS_STEPS[0])
 
-    data = storage.get_bytes(uploaded_file.object_key)
-    raw_tables = add_union_candidates(parse_file(uploaded_file.original_filename, data))
+    raw_tables = []
+    multi_file = len(uploaded_files) > 1
+    for uploaded_file in uploaded_files:
+        data = storage.get_bytes(uploaded_file.object_key)
+        file_tables = parse_file(uploaded_file.original_filename, data)
+        if multi_file:
+            # Disambiguate identically-named sheets/tables across files
+            # ("Orders" in orders_jan.xlsx vs orders_feb.xlsx). A CSV's table
+            # is already named after its own file, so leave those alone.
+            stem = Path(uploaded_file.original_filename).stem
+            for table in file_tables:
+                if table.name.strip().lower() != stem.strip().lower():
+                    table.name = f"{table.name} ({stem})"
+        raw_tables.extend(file_tables)
+    raw_tables = add_union_candidates(raw_tables)
+    raw_tables = add_join_candidates(raw_tables)
+    uploaded_file = uploaded_files[0]  # primary file for naming/status purposes
 
     _progress(db, job, *PROGRESS_STEPS[1])
     total_rows = 0
@@ -161,10 +197,29 @@ def _run(
 
         table_quality = max(0.0, 1.0 - penalty)
         table_qualities.append(table_quality)
+        confidence = compute_structure_confidence([*raw.notes, *normalized.notes])
         table.profile = {
             "columns": [c.normalized_name for c in profile.columns],
             "qualityScore": round(table_quality, 4),
+            "structureConfidence": confidence.score,
+            "structureConfidenceReasons": confidence.reasons,
         }
+        if confidence.score < LOW_CONFIDENCE_THRESHOLD:
+            db.add(
+                Assumption(
+                    dataset_id=dataset.id,
+                    label=(
+                        f"'{table.name}' required guesswork to read "
+                        f"({round(confidence.score * 100)}% confidence): "
+                        + "; ".join(confidence.reasons)
+                    )[:500],
+                    status=AssumptionStatus.NEEDS_REVIEW.value,
+                    confidence=confidence.score,
+                    editable=False,
+                    source=AssumptionSource.PROFILE.value,
+                    affected_columns=[],
+                )
+            )
 
     _progress(db, job, *PROGRESS_STEPS[3])
     _apply_semantic_mapping(db, dataset, uploaded_file)
@@ -188,7 +243,8 @@ def _run(
         "findingCounts": _finding_counts(all_findings),
     }
 
-    uploaded_file.status = FileStatus.PARSED.value
+    for f in uploaded_files:
+        f.status = FileStatus.PARSED.value
     job.status = JobStatus.SUCCEEDED.value
     job.progress = 100
     job.current_step = "Done"
@@ -289,15 +345,15 @@ def _fail(
     db: Session,
     job: GenerationJob,
     dataset: Dataset,
-    uploaded_file: UploadedFile | None,
+    uploaded_files: list[UploadedFile],
     message: str,
 ) -> None:
     db.rollback()
     job.status = JobStatus.FAILED.value
     job.error_message = message
     job.finished_at = datetime.now(timezone.utc)
-    if uploaded_file is not None:
-        uploaded_file.status = FileStatus.FAILED.value
+    for f in uploaded_files:
+        f.status = FileStatus.FAILED.value
     db.commit()
 
 

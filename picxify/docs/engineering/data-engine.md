@@ -105,10 +105,80 @@ Sheets are read as raw cell grids (`header=None`) and reconstructed:
 - Durations and ratings are averaged, never summed; without a strong measure,
   analytics count records instead of summing arbitrary numbers.
 
+## PDF ingestion
+
+- **Digital PDFs**: each page's tables extract from the text layer via
+  pdfplumber, converted into the same raw-grid shape as an Excel sheet and
+  run through the identical `extract_tables()` structure detector — banners,
+  header detection, and merged headers all apply for free.
+- **Multi-page tables**: pdfplumber only sees one page at a time, so a long
+  table becomes several page-labeled RawTables; they recombine via the same
+  union mechanism as per-sheet Excel tabs, but at a lower bar (≥2 pages, not
+  ≥3) since a page break is an extraction artifact, not a deliberate split.
+- **Scanned pages (OCR fallback)**: a page with no text layer at all is
+  rendered to an image and read with tesseract. Rows are reconstructed by
+  clustering word y-positions (not tesseract's own block/line grouping,
+  which splits wide-gutter tables into separate "blocks" per column);
+  columns by clustering word x-positions on gap size. OCR-derived tables
+  always carry a heavy confidence penalty (see below) — there is no ground
+  truth to check OCR against, so every OCR dashboard is flagged for review
+  even when the extraction looks clean.
+
+## Multi-file datasets & relational joins
+
+- A dataset can be built from **several uploaded files at once** (e.g.
+  `orders.csv` + `customers.csv`), not just one. Each file's tables merge
+  into one candidate pool before structure detection continues exactly as
+  for a single file.
+- **Relational join detection**: when one table's column is a near-unique
+  key (≥95% unique) and another table's matching-named column mostly
+  contains those same values (≥80% containment), the fact table gets a join
+  candidate enriched with the dimension's columns — a left join that can
+  never fan out (the dimension is deduplicated on its key first, and the
+  result's row count must exactly match the fact table's).
+- **Cardinality guard**: the "dimension" side must have meaningfully fewer
+  rows than the fact side (≤50%). This is what stops a *row-aligned
+  companion sheet* (a pivot-helper tab built alongside the main sheet, same
+  row count, a coincidentally-unique column) from getting joined in as if it
+  were a real dimension — a real customer workbook hit exactly this failure
+  mode during testing (a 'NEW DATA SHEET' helper tab almost joined into
+  'Tickets') before the guard was added.
+- Both union and join candidates are pure *additions* to the candidate pool;
+  the original tables are always kept, and table scoring (quality × named
+  columns × size, with a small bonus for more columns so a genuine
+  enrichment can win a tie) picks the dashboard's base table.
+
+## Structure-detection confidence
+
+Every table gets a `structureConfidence` score (0–1) computed from which
+structural findings fired on it — no header found, an inferred transpose, a
+sheet/page union, a relational join, OCR extraction — each with its own
+penalty weight (`app/services/confidence.py`). This is distinct from data
+*quality* (nulls, duplicate rows): it answers "how much did the parser have
+to guess," not "how clean are the values." Below the threshold (0.6), the
+dashboard shows a visible amber banner naming the table and linking to
+"Sources & assumptions," and a matching low-confidence assumption is
+recorded automatically.
+
+## The feedback loop: corrections become fixtures
+
+When a user rejects an assumption or corrects a column's semantic type via
+the assumptions API, that correction is real signal the engine guessed wrong
+on that file's specific shape. `apps/api/scripts/promote_fixture.py` (backed
+by `app/services/fixture_promotion.py`) pulls a dataset's source file(s) plus
+a plain-English account of what was corrected, writes the files into
+`packages/sample-data/complex/`, and prints a scaffolded `EXPECTATIONS`
+entry for `evals/run_evals.py` — reviewed and finalized by an engineer, never
+auto-committed. One customer's confusion becomes a permanent regression test.
+
 ## Known gaps (the current frontier)
 
-- No OCR path: numbers living in images/PDF scans.
+- OCR quality depends on scan legibility; skewed/low-contrast scans degrade
+  gracefully (fewer/no tables extracted) rather than producing garbage rows,
+  but there's no image preprocessing (deskew, contrast normalization) yet.
 - Tables nested side-by-side within a single column gap of each other.
 - Month-only pivots chart as ordered categories, not a true dated trend.
 - Unit inference for bare durations (seconds vs minutes) — surfaced raw with
   the column name, never guessed.
+- Joins are limited to a single shared key column per table pair (no
+  composite keys) and cap at 4 candidates per dataset.

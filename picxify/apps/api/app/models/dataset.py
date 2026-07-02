@@ -43,9 +43,34 @@ class Dataset(Base):
     tables: Mapped[list["DatasetTable"]] = relationship(
         back_populates="dataset", cascade="all, delete-orphan", order_by="DatasetTable.name"
     )
+    files: Mapped[list["DatasetFile"]] = relationship(
+        back_populates="dataset", cascade="all, delete-orphan", order_by="DatasetFile.position"
+    )
     findings: Mapped[list["DataQualityFinding"]] = relationship(
         back_populates="dataset", cascade="all, delete-orphan"
     )
+
+
+class DatasetFile(Base):
+    """One row per file feeding a dataset — most datasets have exactly one,
+    but a dataset can combine several uploads (e.g. orders.csv + customers.csv)
+    so their tables can be joined or unioned together."""
+
+    __tablename__ = "dataset_files"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    file_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("uploaded_files.id"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    dataset: Mapped[Dataset] = relationship(back_populates="files")
 
 
 class DatasetTable(Base):

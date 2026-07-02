@@ -10,6 +10,7 @@ columns. Regenerate with:
 
 import random
 from datetime import date, timedelta
+from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
@@ -709,6 +710,104 @@ def stock_prices_csv() -> None:
     (OUT / "stock_prices.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def pdf_revenue_report() -> None:
+    """A clean single-page PDF table export (a text-layer report, the kind a
+    finance tool's 'Export to PDF' button produces)."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+
+    rows = [["Region", "Month", "Revenue"]]
+    for m in range(1, 5):
+        month = date(2026, m, 1).strftime("%b 2026")
+        for region in REGIONS:
+            rows.append([region, month, money(random.uniform(8_000, 40_000))])
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    table = Table(rows)
+    table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.black)]))
+    doc.build([table])
+    (OUT / "pdf_revenue_report.pdf").write_bytes(buffer.getvalue())
+
+
+def pdf_multipage_orders() -> None:
+    """A single long table pdfplumber can only see one page at a time — the
+    engine must recombine the pages into one table."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+
+    rows = [["Order ID", "Customer", "Amount"]]
+    for i in range(140):
+        rows.append([f"O-{5000 + i}", f"Customer {i % 20}", money(random.uniform(50, 1_200))])
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    table = Table(rows, repeatRows=1)
+    table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.black)]))
+    doc.build([table])
+    (OUT / "pdf_multipage_orders.pdf").write_bytes(buffer.getvalue())
+
+
+def scanned_donation_summary() -> None:
+    """An image-only PDF — no text layer at all, the shape of a scanned
+    paper form. Exercises the OCR fallback path."""
+    from PIL import Image, ImageDraw, ImageFont
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import Image as RLImage
+    from reportlab.platypus import SimpleDocTemplate
+
+    width, height = 1400, 900
+    img = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
+    except OSError:
+        font = ImageFont.load_default()
+    programs = ["Food Bank", "Youth Sports", "Health Clinic", "Adult Education", "Senior Center"]
+    rows = [("Program", "Amount")] + [
+        (program, str(random.randrange(4_000, 22_000))) for program in programs
+    ]
+    for i, (left_cell, right_cell) in enumerate(rows):
+        y = 60 + i * 80
+        draw.text((80, y), left_cell, fill="black", font=font)
+        draw.text((900, y), right_cell, fill="black", font=font)
+    image_buffer = BytesIO()
+    img.save(image_buffer, format="PNG")
+    image_buffer.seek(0)
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    doc.build([RLImage(image_buffer, width=500, height=500 * height // width)])
+    (OUT / "scanned_donation_summary.pdf").write_bytes(buffer.getvalue())
+
+
+def orders_customers_pair() -> None:
+    """Two related CSVs meant to be uploaded together: orders.csv (a fact
+    table, customer_id as a foreign key) and customers.csv (the dimension,
+    customer_id unique) — proves the relational join candidate."""
+    n_customers = 15
+    customers = pd.DataFrame(
+        {
+            "customer_id": [f"C{i}" for i in range(n_customers)],
+            "name": [f"Customer {i}" for i in range(n_customers)],
+            "segment": random.choices(["SMB", "Mid-Market", "Enterprise"], k=n_customers),
+        }
+    )
+    orders = pd.DataFrame(
+        {
+            "order_id": [f"O{i}" for i in range(250)],
+            "customer_id": [f"C{random.randrange(n_customers)}" for _ in range(250)],
+            "order_date": [
+                (date(2026, 1, 5) + timedelta(days=random.randrange(160))).isoformat()
+                for _ in range(250)
+            ],
+            "amount": [round(random.uniform(50, 2_000), 2) for _ in range(250)],
+        }
+    )
+    customers.to_csv(OUT / "join_customers.csv", index=False)
+    orders.to_csv(OUT / "join_orders.csv", index=False)
+
+
 if __name__ == "__main__":
     sales_pipeline()
     ecommerce_orders()
@@ -740,4 +839,8 @@ if __name__ == "__main__":
     csv_with_preamble()
     quoted_newlines_csv()
     stock_prices_csv()
+    pdf_revenue_report()
+    pdf_multipage_orders()
+    scanned_donation_summary()
+    orders_customers_pair()
     print("fixtures written to", OUT)
