@@ -93,24 +93,30 @@ def test_fallback_spec_validates_and_charts_execute():
 
 
 def test_kpi_values_are_backed_by_facts():
+    from app.services.dashboard_planner import _acceptable_kpi_values
+
     df = marketing_df()
     ctx = make_ctx(df)
     spec = build_fallback_spec(ctx)
-    fact_values = {str(f["value"]) for f in ctx.facts}
-    fact_values |= {
-        f"{float(f['value']) * 100:+.0f}%"
-        for f in ctx.facts
-        if isinstance(f["value"], (int, float))
-    }
-    fact_values |= {
-        f"{float(f['value']) * 100:.0f}%"
-        for f in ctx.facts
-        if isinstance(f["value"], (int, float))
-    }
+    fact_values = _acceptable_kpi_values(ctx.facts)
+    kpi_count = 0
     for section in spec["sections"]:
         for widget in section["widgets"]:
             if widget["type"] == "kpi":
+                kpi_count += 1
                 assert str(widget["kpi"]["value"]) in fact_values
+    assert kpi_count >= 2
+
+
+def test_kpi_values_are_human_formatted():
+    from app.services.dashboard_planner import compact_number, format_kpi_value
+
+    assert format_kpi_value(48200.0, "currency") == "$48.2K"
+    assert format_kpi_value(0.6125, "percent") == "61%"
+    assert format_kpi_value(7581, "number") == "7,581"
+    assert format_kpi_value(222134.4, "number") == "222.1K"
+    assert compact_number(1_250_000) == "1.2M"  # round-half-even
+    assert format_kpi_value("already formatted", None) == "already formatted"
 
 
 def test_broken_chart_widgets_are_dropped_not_rendered():

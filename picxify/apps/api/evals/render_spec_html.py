@@ -138,6 +138,15 @@ PAGE = """<!doctype html>
   ul.plain { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
   ul.plain li { margin-bottom: 6px; }
   footer { text-align: center; color: var(--faint); font-size: 12px; margin-top: 48px; }
+
+  @media print {
+    body { background: #fff; }
+    .topbar { position: static; }
+    .pillbtn, .src { display: none !important; }
+    .hero { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .panel, .kpi { break-inside: avoid; box-shadow: none; }
+    .overlay { display: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -365,9 +374,28 @@ document.addEventListener('keydown', (event) => {
 });
 
 // ---- charts ----
+const compactNum = (value) => {
+  if (typeof value !== 'number') return String(value ?? '');
+  const magnitude = Math.abs(value);
+  if (magnitude >= 1e9) return (value / 1e9).toFixed(1) + 'B';
+  if (magnitude >= 1e6) return (value / 1e6).toFixed(1) + 'M';
+  if (magnitude >= 1e4) return (value / 1e3).toFixed(1) + 'K';
+  return value.toLocaleString();
+};
+const withCompact = (option) => {
+  const clone = JSON.parse(JSON.stringify(option));
+  for (const key of ['xAxis', 'yAxis']) {
+    const axes = Array.isArray(clone[key]) ? clone[key] : clone[key] ? [clone[key]] : [];
+    for (const axis of axes) {
+      if (axis.type === 'value') axis.axisLabel = { ...(axis.axisLabel || {}), formatter: compactNum };
+    }
+  }
+  clone.tooltip = { ...(clone.tooltip || {}), valueFormatter: compactNum };
+  return clone;
+};
 for (const [id, option] of pending) {
   if (option && Object.keys(option).length) {
-    echarts.init(document.getElementById(id)).setOption(option);
+    echarts.init(document.getElementById(id)).setOption(withCompact(option));
   }
 }
 window.addEventListener('resize', () => {

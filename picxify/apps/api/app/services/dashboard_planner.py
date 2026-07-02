@@ -75,6 +75,30 @@ def plan_dashboard(ctx: PlanningContext, llm: LLMClient | None) -> tuple[dict, s
 # --- shared conversions ---------------------------------------------------
 
 
+def compact_number(value: float) -> str:
+    magnitude = abs(value)
+    if magnitude >= 1e9:
+        return f"{value / 1e9:,.1f}B"
+    if magnitude >= 1e6:
+        return f"{value / 1e6:,.1f}M"
+    if magnitude >= 10_000:
+        return f"{value / 1e3:,.1f}K"
+    if float(value).is_integer():
+        return f"{int(value):,}"
+    return f"{value:,.1f}"
+
+
+def format_kpi_value(value, unit: str | None) -> str | float | int:
+    """Human-scale KPI display values; raw numbers stay in the source trace."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return value
+    if unit == "percent":
+        return f"{value * 100:.0f}%"
+    if unit == "currency":
+        return f"${compact_number(value)}"
+    return compact_number(value)
+
+
 def to_spec_fact(fact: dict) -> dict | None:
     """Canonical `fact` shape: no id field, value must be a scalar."""
     if fact.get("value") is None:
@@ -205,7 +229,8 @@ def _kpi_widget(widget_id: str, title: str, fact: dict, *, value=None,
         "type": "kpi",
         "title": title[:100],
         "kpi": {
-            "value": value if value is not None else fact["value"],
+            "value": value if value is not None
+            else format_kpi_value(fact["value"], fact.get("unit")),
             "label": fact["label"][:100],
             "changeLabel": change_label,
             "direction": direction,
@@ -640,11 +665,14 @@ def _acceptable_kpi_values(facts: list[dict]) -> set[str]:
         if value is None:
             continue
         values.add(str(value))
+        values.add(str(format_kpi_value(value, fact.get("unit"))))
         if isinstance(value, (int, float)):
             values.add(f"{value * 100:+.0f}%")
             values.add(f"{value * 100:.0f}%")
             values.add(f"{value:,.2f}")
             values.add(f"{value:,.0f}")
+            values.add(compact_number(float(value)))
+            values.add(f"${compact_number(float(value))}")
     return values
 
 

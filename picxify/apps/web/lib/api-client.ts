@@ -349,6 +349,30 @@ export function listDashboards(
   });
 }
 
+export function publishDashboard(
+  token: string,
+  dashboardId: string,
+  visibility: "private" | "unlisted" | "public",
+): Promise<{ visibility: string; shareSlug: string | null; shareUrl: string | null }> {
+  return apiFetch(`/dashboards/${dashboardId}/publish`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ visibility }),
+  });
+}
+
+export interface ShareResponse {
+  title: string;
+  subtitle: string | null;
+  visibility: string;
+  spec: DashboardSpec;
+}
+
+// Public route: intentionally no Authorization header.
+export function getShare(slug: string): Promise<ShareResponse> {
+  return apiFetch<ShareResponse>(`/shares/${slug}`);
+}
+
 export async function putToPresignedUrl(uploadUrl: string, file: File): Promise<void> {
   const response = await fetch(uploadUrl, {
     method: "PUT",

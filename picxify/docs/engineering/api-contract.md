@@ -61,3 +61,10 @@ All endpoints below require a Clerk-issued bearer JWT (verified against `CLERK_J
 - All routes require authenticated workspace access unless explicitly public.
 - Never accept `workspaceId` alone as proof of access — always verify membership.
 - Typed request/response models (Pydantic on the API, TypeScript in `apps/web/lib/api-client.ts`).
+
+## Implemented (Milestones 8-9)
+
+| Endpoint | Behavior |
+|---|---|
+| `POST /dashboards/{id}/publish` | Sets visibility (private/unlisted/public); generates an unguessable `pxf_...` slug on first publish and reuses it on republish. Editor+ role. Returns `{ visibility, shareSlug, shareUrl }`. |
+| `GET /shares/{slug}` | **Public** (the only unauthenticated data endpoint). Returns the dashboard title + validated spec only when explicitly published with a generated version; everything else is 404 so slugs cannot be probed. |

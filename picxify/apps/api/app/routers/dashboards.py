@@ -1,4 +1,5 @@
 import logging
+import secrets
 import uuid
 from collections.abc import Callable
 from datetime import datetime
@@ -9,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
+from app.config import settings
 from app.db import get_db
 from app.models.dashboard import Dashboard, DashboardVersion, DashboardVisibility
 from app.models.dataset import Dataset, DatasetTable
@@ -196,6 +198,54 @@ def list_dashboards(
             )
             for d in dashboards
         ]
+    )
+
+
+class PublishRequest(BaseModel):
+    visibility: str  # private | unlisted | public
+
+
+class PublishResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    visibility: str
+    share_slug: str | None = Field(alias="shareSlug")
+    share_url: str | None = Field(alias="shareUrl")
+
+
+@router.post("/{dashboard_id}/publish", response_model=PublishResponse)
+def publish_dashboard(
+    dashboard_id: uuid.UUID,
+    body: PublishRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PublishResponse:
+    if body.visibility not in {v.value for v in DashboardVisibility}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Visibility must be private, unlisted, or public.",
+        )
+    dashboard = db.scalar(
+        select(Dashboard).where(Dashboard.id == dashboard_id, Dashboard.deleted_at.is_(None))
+    )
+    if dashboard is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found.")
+    require_membership(db, dashboard.workspace_id, user, roles=EDITOR_ROLES)
+
+    dashboard.visibility = body.visibility
+    if body.visibility != DashboardVisibility.PRIVATE.value and not dashboard.share_slug:
+        # Unguessable slug (SETUP.md §17.1); reused across republish so links
+        # a user already sent keep working.
+        dashboard.share_slug = f"pxf_{secrets.token_urlsafe(12)}"
+    db.commit()
+
+    is_shared = dashboard.visibility != DashboardVisibility.PRIVATE.value
+    return PublishResponse(
+        visibility=dashboard.visibility,
+        share_slug=dashboard.share_slug if is_shared else None,
+        share_url=(
+            f"{settings.app_url}/share/{dashboard.share_slug}" if is_shared else None
+        ),
     )
 
 
