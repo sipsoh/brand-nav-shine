@@ -1,5 +1,25 @@
 # Changelog
 
+## Milestone 6 — Insight engine (2026-07-02)
+
+- Insight engine (`app/services/insight_engine.py`): all numeric facts computed by code
+  over the normalized data, each with a full source trace (table, columns, filters,
+  calculation, row count, generatedBy="code").
+- Insight types: overview totals per measure; trend (monthly grain for spans ≥ 70 days,
+  weekly below, cost-aware severity); top contributors with composition facts; outliers via
+  median-absolute-deviation robust z-score; funnel stage counts + win rate when won/lost
+  values exist; warning/critical quality findings promoted to insights.
+- Text themes for survey/customer-feedback datasets: the LLM clusters comments by index,
+  code validates the indexes, derives the counts, and keeps representative quotes —
+  generatedBy="model_supported_by_code". Skipped cleanly when keyless.
+- Versioned `text_themes_v1` prompt + output schema in source control.
+- `GET /datasets/{id}/insights` computes per-table facts/insights from Parquet snapshots.
+- Web: "Notable patterns" section on the dataset page with severity styling and an
+  expandable "How this was calculated" source-trace drawer on every insight.
+- Tests: 11 new pytest cases (74 total) — exact trend/share/win-rate values, MAD outliers,
+  clean-data non-detection, a source-trace completeness invariant over all outputs, and
+  text-theme count derivation (duplicate/out-of-range indexes handled, ghost themes dropped).
+
 ## Milestone 5 — Semantic mapping and assumptions (2026-07-02)
 
 - Semantic mapper (SETUP.md §9.5): deterministic heuristic core (name patterns + detected

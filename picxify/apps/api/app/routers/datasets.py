@@ -1,7 +1,9 @@
 import logging
 import uuid
 from collections.abc import Callable
+from io import BytesIO
 
+import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
@@ -10,13 +12,17 @@ from sqlalchemy.orm import Session, selectinload
 from app.auth import get_current_user
 from app.db import get_db
 from app.models.assumption import Assumption, AssumptionStatus
-from app.models.dataset import Dataset, DatasetColumn, DatasetTable
+from app.models.dataset import DataQualityFinding, Dataset, DatasetColumn, DatasetTable
 from app.models.job import GenerationJob, JobStatus
 from app.models.upload import FileStatus, UploadedFile
 from app.models.user import User
 from app.models.workspace import WorkspaceRole
 from app.prompts.semantic_mapper_prompt import SEMANTIC_TYPES
+from app.services.insight_engine import ColumnMeta, compute_insights, quality_insights
+from app.services.llm import get_semantic_mapper_llm
 from app.services.permissions import require_membership
+from app.services.storage import StorageService, get_storage
+from app.services.text_insights import compute_text_themes
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +187,89 @@ def create_dataset_from_file(
     return DatasetFromFileResponse(
         dataset_id=dataset.id, job_id=job.id, status=JobStatus.QUEUED.value
     )
+
+
+class TableInsightsResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    table_id: uuid.UUID = Field(alias="tableId")
+    table_name: str = Field(alias="tableName")
+    facts: list[dict]
+    insights: list[dict]
+
+
+class DatasetInsightsResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    dataset_id: uuid.UUID = Field(alias="datasetId")
+    tables: list[TableInsightsResponse]
+
+
+@router.get("/{dataset_id}/insights", response_model=DatasetInsightsResponse)
+def get_dataset_insights(
+    dataset_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    storage: StorageService = Depends(get_storage),
+) -> DatasetInsightsResponse:
+    """Compute facts and insights from the normalized Parquet snapshots.
+
+    Everything numeric here is calculated by code; the only LLM involvement is
+    text-theme clustering, whose counts are re-derived by code from validated
+    comment references.
+    """
+    dataset = db.scalar(
+        select(Dataset)
+        .where(Dataset.id == dataset_id)
+        .options(selectinload(Dataset.tables).selectinload(DatasetTable.columns))
+    )
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found.")
+    require_membership(db, dataset.workspace_id, user)
+
+    use_case = (dataset.profile.get("useCaseCandidates") or [{}])[0].get("useCase")
+    responses: list[TableInsightsResponse] = []
+    for table in dataset.tables:
+        if not table.snapshot_object_key:
+            continue
+        df = pd.read_parquet(BytesIO(storage.get_bytes(table.snapshot_object_key)))
+        columns_meta = [
+            ColumnMeta(
+                name=column.name,
+                detected_type=column.detected_type,
+                semantic_type=column.semantic_type,
+                role_hint=column.role_hint,
+            )
+            for column in table.columns
+        ]
+        result = compute_insights(df, table_id=str(table.id), columns=columns_meta)
+
+        findings = db.scalars(
+            select(DataQualityFinding).where(DataQualityFinding.table_id == table.id)
+        ).all()
+        result.insights.extend(quality_insights(findings, table_id=str(table.id)))
+
+        if use_case in {"survey", "customer_feedback"}:
+            comment_column = next(
+                (c.name for c in table.columns if c.semantic_type == "comment"), None
+            )
+            if comment_column is not None:
+                result.insights.extend(
+                    compute_text_themes(
+                        df, str(table.id), comment_column, llm=get_semantic_mapper_llm()
+                    )
+                )
+
+        responses.append(
+            TableInsightsResponse(
+                table_id=table.id,
+                table_name=table.name,
+                facts=[fact.to_dict() for fact in result.facts],
+                insights=[insight.to_dict() for insight in result.insights],
+            )
+        )
+
+    return DatasetInsightsResponse(dataset_id=dataset.id, tables=responses)
 
 
 @router.patch("/{dataset_id}/assumptions/{assumption_id}", response_model=AssumptionResponse)

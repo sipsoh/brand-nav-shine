@@ -187,6 +187,53 @@ export function getDataset(token: string, datasetId: string): Promise<DatasetRes
   });
 }
 
+export interface SourceTrace {
+  tableId: string;
+  columns: string[];
+  filters: string[];
+  calculation: string;
+  rowCount: number;
+  generatedBy: "code" | "model_supported_by_code" | "user";
+}
+
+export interface ComputedFact {
+  id: string;
+  label: string;
+  value: string | number | boolean | null;
+  unit: string | null;
+  sourceTrace: SourceTrace;
+}
+
+export interface ComputedInsight {
+  id: string;
+  headline: string;
+  detail: string;
+  insightType: string;
+  severity: "positive" | "negative" | "neutral" | "warning" | "opportunity";
+  confidence: number;
+  facts: ComputedFact[];
+  sourceTrace: SourceTrace;
+}
+
+export interface DatasetInsightsResponse {
+  datasetId: string;
+  tables: {
+    tableId: string;
+    tableName: string;
+    facts: ComputedFact[];
+    insights: ComputedInsight[];
+  }[];
+}
+
+export function getDatasetInsights(
+  token: string,
+  datasetId: string,
+): Promise<DatasetInsightsResponse> {
+  return apiFetch<DatasetInsightsResponse>(`/datasets/${datasetId}/insights`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 export async function putToPresignedUrl(uploadUrl: string, file: File): Promise<void> {
   const response = await fetch(uploadUrl, {
     method: "PUT",

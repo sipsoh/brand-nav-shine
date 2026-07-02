@@ -42,6 +42,12 @@ All endpoints below require a Clerk-issued bearer JWT (verified against `CLERK_J
 | `GET /datasets/{id}` (extended) | Now includes `useCaseCandidates`, per-column `semanticType`, and the dataset's `assumptions`. |
 | `PATCH /datasets/{datasetId}/assumptions/{assumptionId}` | Accept/reject an assumption, or apply a `replacement` (`{column, semanticType}`) that remaps a column's meaning. Editor+ role; 409 for non-editable assumptions. |
 
+## Implemented (Milestone 6)
+
+| Endpoint | Behavior |
+|---|---|
+| `GET /datasets/{id}/insights` | Computes facts and insights from the Parquet snapshots on demand: overview totals, trend (MoM/WoW), top contributors, composition, MAD outliers, funnel/win rate, data-quality caveats, and (for survey/feedback datasets with an LLM configured) text themes. Every fact and insight carries a `sourceTrace`. |
+
 ## Rules
 
 - All routes require authenticated workspace access unless explicitly public.

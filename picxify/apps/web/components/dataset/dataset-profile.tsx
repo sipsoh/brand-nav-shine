@@ -10,6 +10,7 @@ import {
   type DatasetResponse,
 } from "@/lib/api-client";
 import { clerkEnabled } from "@/lib/auth";
+import { InsightList } from "@/components/dataset/insight-list";
 
 const TYPE_STYLES: Record<string, string> = {
   integer: "bg-blue-50 text-blue-700",
@@ -107,6 +108,15 @@ function LoadedProfile({ datasetId }: { datasetId: string }) {
           getToken={getToken}
         />
       )}
+
+      <section>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+          Notable patterns
+        </h2>
+        <div className="mt-3">
+          <InsightList datasetId={dataset.id} getToken={getToken} />
+        </div>
+      </section>
 
       {dataset.findings.length > 0 && (
         <section>

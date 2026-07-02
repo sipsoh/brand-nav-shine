@@ -157,3 +157,44 @@ def test_dataset_and_job_reads_are_isolated(harness, as_user):
     intruder.post("/users/sync")
     assert intruder.get(f"/datasets/{body['datasetId']}").status_code == 404
     assert intruder.get(f"/jobs/{body['jobId']}").status_code == 404
+
+
+def test_dataset_insights_endpoint(harness):
+    client, storage, dispatched, workspace_id = harness
+    file_id = upload_file(client, storage, workspace_id)
+    body = client.post(
+        "/datasets/from-file",
+        json={"workspaceId": workspace_id, "fileId": file_id, "name": "Campaigns"},
+    ).json()
+    run_dispatched_jobs(storage, dispatched)
+
+    response = client.get(f"/datasets/{body['datasetId']}/insights")
+    assert response.status_code == 200
+    tables = response.json()["tables"]
+    assert len(tables) == 1
+    facts = tables[0]["facts"]
+    insights = tables[0]["insights"]
+
+    fact_ids = {fact["id"] for fact in facts}
+    assert "fact_row_count" in fact_ids
+    assert "fact_total_spend" in fact_ids
+    # Trend runs on the primary measure (revenue outranks cost in priority).
+    assert any(fid.startswith("fact_trend_") for fid in fact_ids)
+    assert len(insights) >= 1
+    for fact in facts:
+        assert fact["sourceTrace"]["generatedBy"] == "code"
+        assert fact["sourceTrace"]["calculation"]
+
+
+def test_dataset_insights_isolated(harness, as_user):
+    client, storage, dispatched, workspace_id = harness
+    file_id = upload_file(client, storage, workspace_id)
+    body = client.post(
+        "/datasets/from-file",
+        json={"workspaceId": workspace_id, "fileId": file_id, "name": "Private"},
+    ).json()
+    run_dispatched_jobs(storage, dispatched)
+
+    intruder = as_user(auth_user_id="user_intruder", email="i@example.com")
+    intruder.post("/users/sync")
+    assert intruder.get(f"/datasets/{body['datasetId']}/insights").status_code == 404
