@@ -23,10 +23,10 @@ PAGE = """<!doctype html>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #f4f5fa; --card: #ffffff; --line: #e9eaf2; --ink: #0f1222;
-    --muted: #6b7089; --faint: #9ca0b5; --accent: #6366f1; --accent2: #8b5cf6;
-    --hero1: #14162e; --hero2: #1e1b4b;
-    --radius: 18px; --shadow: 0 1px 2px rgba(16,17,38,.04), 0 8px 24px rgba(16,17,38,.06);
+    --bg: #f6f6f2; --card: #ffffff; --line: #e8e8e0; --ink: #101613;
+    --muted: #5f6c64; --faint: #96a29a; --accent: #0d9668; --accent2: #34d399;
+    --accent-soft: #e7f6ef; --hero1: #0a1410; --hero2: #10352a;
+    --radius: 18px; --shadow: 0 1px 2px rgba(12,20,16,.04), 0 8px 24px rgba(12,20,16,.06);
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
@@ -43,28 +43,29 @@ PAGE = """<!doctype html>
   .topnav { display: flex; gap: 4px; }
   .topnav span { padding: 6px 14px; border-radius: 999px; color: var(--muted);
                  font-weight: 500; font-size: 13px; }
-  .topnav span.active { background: #eef0ff; color: var(--accent); font-weight: 600; }
+  .topnav span.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
   .topbar .spacer { flex: 1; }
   .pillbtn { border: 1px solid var(--line); background: var(--card); border-radius: 999px;
              padding: 7px 16px; font: inherit; font-size: 13px; font-weight: 600;
              color: var(--ink); cursor: pointer; }
-  .pillbtn:hover { border-color: #c9cce0; }
+  .pillbtn:hover { border-color: #bccdc2; }
   .pillbtn .n { display: inline-block; min-width: 18px; text-align: center; margin-left: 6px;
-                background: #eef0ff; color: var(--accent); border-radius: 999px;
+                background: var(--accent-soft); color: var(--accent); border-radius: 999px;
                 font-size: 11px; padding: 1px 5px; }
 
   /* Hero */
-  .hero { background: radial-gradient(1200px 500px at 85% -10%, #3730a3 0%, transparent 60%),
+  .hero { background: radial-gradient(1100px 480px at 88% -12%, rgba(52,211,153,.35) 0%, transparent 60%),
+                       radial-gradient(700px 380px at 8% 110%, rgba(163,230,53,.14) 0%, transparent 60%),
                        linear-gradient(135deg, var(--hero1), var(--hero2));
-          color: #fff; padding: 40px 0 84px; }
+          color: #fff; padding: 42px 0 88px; }
   .hero-in { max-width: 1240px; margin: 0 auto; padding: 0 28px; }
-  .crumbs { font-size: 12px; color: #a5b4fc; font-weight: 600;
+  .crumbs { font-size: 12px; color: #6ee7b7; font-weight: 600;
             text-transform: uppercase; letter-spacing: .12em; }
   h1 { font-size: 34px; font-weight: 800; letter-spacing: -.03em; margin: 10px 0 6px; }
-  .sub { color: #c7d2fe; max-width: 720px; }
+  .sub { color: #a7d9c4; max-width: 720px; }
   .meta { margin-top: 14px; display: flex; gap: 14px; flex-wrap: wrap;
-          color: #a5b4fc; font-size: 12.5px; }
-  .meta b { color: #e0e7ff; font-weight: 600; }
+          color: #7fb59d; font-size: 12.5px; }
+  .meta b { color: #d1fae5; font-weight: 600; }
 
   .sheet { max-width: 1240px; margin: -56px auto 0; padding: 0 28px 90px; }
 
@@ -73,7 +74,7 @@ PAGE = """<!doctype html>
   .kpi { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
          box-shadow: var(--shadow); padding: 20px 22px; position: relative; overflow: hidden; }
   .kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px;
-                 background: linear-gradient(180deg, var(--accent), var(--accent2)); }
+                 background: linear-gradient(180deg, var(--accent), #a3e635); }
   .kpi-label { font-size: 11px; font-weight: 700; letter-spacing: .09em;
                text-transform: uppercase; color: var(--faint); }
   .kpi-value { font-size: 30px; font-weight: 800; letter-spacing: -.02em; margin-top: 8px; }
@@ -84,23 +85,28 @@ PAGE = """<!doctype html>
   .src:hover { color: var(--accent); }
 
   /* Exec summary strip */
-  .exec { margin-top: 16px; background: linear-gradient(90deg, #eef0ff, #f6f2ff);
-          border: 1px solid #e3e5fb; border-radius: var(--radius); padding: 16px 22px;
+  .exec { margin-top: 16px; background: linear-gradient(90deg, #e9f7f0, #f3f9e8);
+          border: 1px solid #d9eede; border-radius: var(--radius); padding: 16px 22px;
           display: flex; gap: 14px; align-items: baseline; }
   .exec .tag { font-size: 11px; font-weight: 800; letter-spacing: .1em; color: var(--accent);
                text-transform: uppercase; white-space: nowrap; }
-  .exec .lines { color: #43465e; font-size: 13.5px; }
+  .exec .lines { color: #3f4c45; font-size: 13.5px; }
 
-  /* Chart grid */
-  .grid { margin-top: 16px; display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+  /* Chart sections */
+  .section-head { margin: 40px 0 14px; display: flex; align-items: baseline; gap: 14px; }
+  .section-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: .14em;
+                     text-transform: uppercase; color: var(--accent); white-space: nowrap; }
+  .section-title { font-size: 20px; font-weight: 800; letter-spacing: -.02em; white-space: nowrap; }
+  .section-rule { flex: 1; height: 1px; background: linear-gradient(90deg, var(--line), transparent); }
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
   .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
            box-shadow: var(--shadow); padding: 20px 22px; position: relative; }
   .span-12 { grid-column: span 12; } .span-8 { grid-column: span 8; }
   .span-6 { grid-column: span 6; } .span-4 { grid-column: span 4; }
   @media (max-width: 900px) { .grid > * { grid-column: span 12 !important; } }
   .panel-title { font-weight: 700; font-size: 14.5px; letter-spacing: -.01em; padding-right: 30px; }
-  .chart-box { height: 300px; margin-top: 10px; }
-  .span-12 .chart-box { height: 340px; }
+  .chart-box { height: 310px; margin-top: 10px; }
+  .span-12 .chart-box { height: 380px; }
 
   /* Overlay */
   .overlay { position: fixed; inset: 0; background: rgba(15,18,34,.45);
@@ -218,15 +224,17 @@ addMeta('· every widget source-traced', '');
 hero.appendChild(meta);
 
 // ---- collect widgets ----
-const kpis = [], charts = [], insightsInline = [];
+const kpis = [], insightsInline = [], chartSections = [];
 let execText = null;
 for (const section of spec.sections) {
+  const sectionCharts = [];
   for (const widget of section.widgets) {
     if (widget.type === 'kpi') kpis.push(widget);
-    else if (widget.type === 'chart') charts.push(widget);
+    else if (widget.type === 'chart') sectionCharts.push(widget);
     else if (widget.type === 'text' && !execText) execText = widget;
     else if (widget.type === 'insight_card' && widget.insight) insightsInline.push(widget.insight);
   }
+  if (sectionCharts.length) chartSections.push({ title: section.title, charts: sectionCharts });
 }
 const allInsights = spec.insights.length ? spec.insights : insightsInline;
 
@@ -257,21 +265,41 @@ if (execText && execText.markdown) {
   sheet.appendChild(strip);
 }
 
-// ---- chart grid ----
-const SPANS = { xl: 'span-12', lg: 'span-8', md: 'span-6', sm: 'span-4', full: 'span-12' };
-const grid = el('div', 'grid');
+// ---- chart sections: header + uniform aligned grid ----
 const pending = [];
-charts.forEach((widget, index) => {
-  const panel = el('div', 'panel ' + (SPANS[widget.size] || 'span-6'));
-  if (widget.chart.sourceTrace) panel.appendChild(srcButton(widget.title, widget.chart.sourceTrace));
-  panel.appendChild(el('div', 'panel-title', widget.title));
-  const box = el('div', 'chart-box');
-  box.id = 'chart-' + index;
-  panel.appendChild(box);
-  grid.appendChild(panel);
-  pending.push([box.id, widget.chart.echartsOption]);
-});
-sheet.appendChild(grid);
+let chartIndex = 0;
+let sectionIndex = 0;
+for (const chartSection of chartSections) {
+  sectionIndex += 1;
+  const head = el('div', 'section-head');
+  head.appendChild(el('span', 'section-eyebrow', String(sectionIndex).padStart(2, '0')));
+  head.appendChild(el('span', 'section-title', chartSection.title));
+  head.appendChild(el('span', 'section-rule'));
+  sheet.appendChild(head);
+
+  // Full-width charts stack; the rest share a uniform span so rows align.
+  const wide = chartSection.charts.filter(w => w.size === 'xl' || w.size === 'full');
+  const rest = chartSection.charts.filter(w => !(w.size === 'xl' || w.size === 'full'));
+  const restSpan = rest.length === 1 ? 'span-12'
+    : rest.length % 3 === 0 ? 'span-4' : 'span-6';
+
+  const grid = el('div', 'grid');
+  const addPanel = (widget, span) => {
+    const panel = el('div', 'panel ' + span);
+    if (widget.chart.sourceTrace) {
+      panel.appendChild(srcButton(widget.title, widget.chart.sourceTrace));
+    }
+    panel.appendChild(el('div', 'panel-title', widget.title));
+    const box = el('div', 'chart-box');
+    box.id = 'chart-' + chartIndex++;
+    panel.appendChild(box);
+    grid.appendChild(panel);
+    pending.push([box.id, widget.chart.echartsOption]);
+  };
+  for (const widget of wide) addPanel(widget, 'span-12');
+  for (const widget of rest) addPanel(widget, restSpan);
+  sheet.appendChild(grid);
+}
 sheet.appendChild(el('footer', null,
   'Generated by Picxify · ' + spec.dashboard.generatedAt + ' · code calculates, AI narrates'));
 

@@ -2,7 +2,7 @@
 
 from app.services.query_runner import QueryResult
 
-PALETTE = ["#6366f1", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#84cc16"]
+PALETTE = ["#10b981", "#0ea5e9", "#f59e0b", "#8b5cf6", "#f43f5e", "#14b8a6", "#a3e635", "#64748b"]
 
 CARTESIAN = {"line", "area", "bar", "stacked_bar"}
 CIRCULAR = {"pie", "donut"}

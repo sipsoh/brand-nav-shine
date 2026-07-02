@@ -165,9 +165,7 @@ def build_fallback_spec(ctx: PlanningContext) -> dict:
     hero = _hero_section(ctx)
     if hero:
         sections.append(hero)
-    chart_section = _charts_section(ctx)
-    if chart_section:
-        sections.append(chart_section)
+    sections.extend(_chart_sections(ctx))
     insight_section = _insights_section(ctx)
     if insight_section:
         sections.append(insight_section)
@@ -280,8 +278,35 @@ def _hero_section(ctx: PlanningContext) -> dict | None:
     return {"id": "sec_hero", "title": "Highlights", "layout": "hero", "widgets": widgets}
 
 
-def _charts_section(ctx: PlanningContext) -> dict | None:
-    widgets: list[dict] = []
+def _chart_sections(ctx: PlanningContext) -> list[dict]:
+    """Two aligned chart sections: time-series charts full-width under
+    'Performance over time', dimension charts in a uniform 'Breakdowns' grid."""
+    time_widgets, breakdown_widgets = _build_chart_widgets(ctx)
+    sections = []
+    if time_widgets:
+        sections.append(
+            {
+                "id": "sec_time",
+                "title": "Performance over time",
+                "layout": "full_width",
+                "widgets": time_widgets,
+            }
+        )
+    if breakdown_widgets:
+        sections.append(
+            {
+                "id": "sec_breakdowns",
+                "title": "Breakdowns",
+                "layout": "grid",
+                "widgets": breakdown_widgets,
+            }
+        )
+    return sections
+
+
+def _build_chart_widgets(ctx: PlanningContext) -> tuple[list[dict], list[dict]]:
+    time_widgets: list[dict] = []
+    breakdown_widgets: list[dict] = []
     measure = _primary_measure(ctx)
     average = _average_measure(ctx)
     dates = _columns_by_role(ctx, "date")
@@ -301,7 +326,7 @@ def _charts_section(ctx: PlanningContext) -> dict | None:
         metric_label = "records"
 
     if dates and ctx.date_grain:
-        widgets.append(
+        time_widgets.append(
             _chart_widget(
                 "w_chart_trend",
                 f"{metric_label} over time",
@@ -318,8 +343,27 @@ def _charts_section(ctx: PlanningContext) -> dict | None:
             )
         )
 
+    if dimension and dates and ctx.date_grain:
+        time_widgets.append(
+            _chart_widget(
+                "w_chart_mix",
+                f"{metric_label} over time by {dimension.name}",
+                "stacked_bar",
+                {
+                    "tableId": ctx.table_id,
+                    "measures": metric_measures,
+                    "dimensions": [dimension.name],
+                    "dateColumn": dates[0].name,
+                    "dateGrain": ctx.date_grain,
+                    "filters": [],
+                    "limit": 500,
+                },
+                size="xl",
+            )
+        )
+
     if dimension:
-        widgets.append(
+        breakdown_widgets.append(
             _chart_widget(
                 "w_chart_breakdown",
                 f"{metric_label} by {dimension.name}",
@@ -335,27 +379,8 @@ def _charts_section(ctx: PlanningContext) -> dict | None:
             )
         )
 
-    if dimension and dates and ctx.date_grain:
-        widgets.append(
-            _chart_widget(
-                "w_chart_mix",
-                f"{metric_label} over time by {dimension.name}",
-                "stacked_bar",
-                {
-                    "tableId": ctx.table_id,
-                    "measures": metric_measures,
-                    "dimensions": [dimension.name],
-                    "dateColumn": dates[0].name,
-                    "dateGrain": ctx.date_grain,
-                    "filters": [],
-                    "limit": 500,
-                },
-                size="lg",
-            )
-        )
-
     if secondary is not None and secondary is not stage:
-        widgets.append(
+        breakdown_widgets.append(
             _chart_widget(
                 "w_chart_secondary",
                 f"{metric_label} by {secondary.name}",
@@ -372,7 +397,7 @@ def _charts_section(ctx: PlanningContext) -> dict | None:
         )
 
     if average and dimension:
-        widgets.append(
+        breakdown_widgets.append(
             _chart_widget(
                 "w_chart_avg_measure",
                 f"Average {average.name} by {dimension.name}",
@@ -395,7 +420,7 @@ def _charts_section(ctx: PlanningContext) -> dict | None:
         )
 
     if stage is not None and stage is not dimension:
-        widgets.append(
+        breakdown_widgets.append(
             _chart_widget(
                 "w_chart_funnel",
                 f"Records by {stage.name}",
@@ -411,9 +436,7 @@ def _charts_section(ctx: PlanningContext) -> dict | None:
             )
         )
 
-    if not widgets:
-        return None
-    return {"id": "sec_charts", "title": "Performance", "layout": "grid", "widgets": widgets}
+    return time_widgets, breakdown_widgets
 
 
 def _chart_widget(

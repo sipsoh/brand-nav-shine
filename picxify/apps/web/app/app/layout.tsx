@@ -27,7 +27,7 @@ export default function AppLayout({
                 href={item.href}
                 className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
                   active
-                    ? "bg-indigo-50 font-semibold text-indigo-600"
+                    ? "bg-emerald-50 font-semibold text-emerald-700"
                     : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
                 }`}
               >
