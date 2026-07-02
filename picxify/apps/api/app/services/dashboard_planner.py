@@ -109,7 +109,9 @@ def _columns_by_role(ctx: PlanningContext, role: str) -> list[ColumnCtx]:
     return [c for c in ctx.columns if c.role_hint == role]
 
 
-STRONG_MEASURE_PRIORITY = ["revenue", "cost", "conversion", "engagement", "rating", "quantity"]
+# Mirrors insight_engine.STRONG_SEMANTICS: measures whose sums mean something.
+# Ratings and durations are explicitly absent — they are averaged, never summed.
+STRONG_MEASURE_PRIORITY = ["revenue", "cost", "conversion", "engagement", "quantity"]
 
 
 def _primary_measure(ctx: PlanningContext) -> ColumnCtx | None:
@@ -122,9 +124,11 @@ def _primary_measure(ctx: PlanningContext) -> ColumnCtx | None:
     return measures[0] if measures else None
 
 
-def _duration_measure(ctx: PlanningContext) -> ColumnCtx | None:
+def _average_measure(ctx: PlanningContext) -> ColumnCtx | None:
+    """Duration or rating: measures that only make sense averaged."""
     return next(
-        (c for c in _columns_by_role(ctx, "measure") if c.semantic_type == "duration"), None
+        (c for c in _columns_by_role(ctx, "measure") if c.semantic_type in {"duration", "rating"}),
+        None,
     )
 
 
@@ -233,12 +237,12 @@ def _hero_section(ctx: PlanningContext) -> dict | None:
                 _kpi_widget("w_kpi_total", f"Total {measure.name}"[:100], total_fact)
             )
 
-    duration = _duration_measure(ctx)
-    if duration:
-        avg_fact = _fact_by_prefix(ctx, f"fact_avg_{_slug(duration.name)}")
+    average = _average_measure(ctx)
+    if average:
+        avg_fact = _fact_by_prefix(ctx, f"fact_avg_{_slug(average.name)}")
         if avg_fact:
             widgets.append(
-                _kpi_widget("w_kpi_avg_duration", f"Average {duration.name}"[:100], avg_fact)
+                _kpi_widget("w_kpi_avg_measure", f"Average {average.name}"[:100], avg_fact)
             )
 
     trend_fact = _fact_by_prefix(ctx, "fact_trend_")
@@ -274,7 +278,7 @@ def _hero_section(ctx: PlanningContext) -> dict | None:
 def _charts_section(ctx: PlanningContext) -> dict | None:
     widgets: list[dict] = []
     measure = _primary_measure(ctx)
-    duration = _duration_measure(ctx)
+    average = _average_measure(ctx)
     dates = _columns_by_role(ctx, "date")
     dimension = _primary_dimension(ctx)
     stage = next((c for c in ctx.columns if c.semantic_type in {"stage", "status"}), None)
@@ -322,19 +326,19 @@ def _charts_section(ctx: PlanningContext) -> dict | None:
             )
         )
 
-    if duration and dimension:
+    if average and dimension:
         widgets.append(
             _chart_widget(
-                "w_chart_duration",
-                f"Average {duration.name} by {dimension.name}",
+                "w_chart_avg_measure",
+                f"Average {average.name} by {dimension.name}",
                 "horizontal_bar",
                 {
                     "tableId": ctx.table_id,
                     "measures": [
                         {
-                            "column": duration.name,
+                            "column": average.name,
                             "aggregation": "avg",
-                            "alias": f"avg_{_slug(duration.name)}",
+                            "alias": f"avg_{_slug(average.name)}",
                         }
                     ],
                     "dimensions": [dimension.name],

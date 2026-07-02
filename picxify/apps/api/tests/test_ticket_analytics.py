@@ -109,13 +109,13 @@ def test_ticket_dashboard_uses_counts_and_avg_duration():
     # Trend and breakdown count records; nothing sums duration.
     assert charts["w_chart_trend"]["querySpec"]["measures"][0]["aggregation"] == "count"
     assert charts["w_chart_breakdown"]["querySpec"]["measures"][0]["aggregation"] == "count"
-    assert charts["w_chart_duration"]["querySpec"]["measures"][0]["aggregation"] == "avg"
+    assert charts["w_chart_avg_measure"]["querySpec"]["measures"][0]["aggregation"] == "avg"
     for chart in charts.values():
         for m in chart["querySpec"]["measures"]:
             assert not (m["column"] == "duration" and m["aggregation"] == "sum")
 
     kpi_ids = {w["id"] for s in spec["sections"] for w in s["widgets"] if w["type"] == "kpi"}
-    assert "w_kpi_avg_duration" in kpi_ids
+    assert "w_kpi_avg_measure" in kpi_ids
 
 
 def test_operations_use_case_detected():

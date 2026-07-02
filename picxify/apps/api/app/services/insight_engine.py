@@ -16,9 +16,11 @@ MEASURE_PRIORITY = ["revenue", "cost", "conversion", "engagement", "rating", "qu
 DIMENSION_PRIORITY = ["campaign", "channel", "stage", "status", "segment", "region", "owner",
                       "account", "customer", "other"]
 # Measures whose sums are business-meaningful. Without one of these, analytics
-# switch to record counts (e.g. tickets per month) — summing a duration or an
-# arbitrary numeric column produces impressive-looking nonsense.
-STRONG_SEMANTICS = {"revenue", "cost", "conversion", "engagement", "rating", "quantity"}
+# switch to record counts (e.g. tickets per month) — summing a duration, a
+# rating, or an arbitrary numeric column produces impressive-looking nonsense.
+STRONG_SEMANTICS = {"revenue", "cost", "conversion", "engagement", "quantity"}
+# Measures that are only meaningful as averages.
+AVERAGE_SEMANTICS = {"duration", "rating"}
 TOP_CONTRIBUTOR_THRESHOLD = 0.30
 OUTLIER_ROBUST_Z = 3.5
 MAX_DIMENSION_PAIRS = 3
@@ -175,8 +177,8 @@ def _overview_facts(df, table_id, measures: list[ColumnMeta], result: InsightRes
                     ),
                 )
             )
-        elif measure.semantic_type == "duration":
-            # Averages are meaningful for durations; totals are not.
+        elif measure.semantic_type in AVERAGE_SEMANTICS:
+            # Averages are meaningful for durations and ratings; totals are not.
             result.facts.append(
                 ComputedFact(
                     id=f"fact_avg_{_slug(measure.name)}",

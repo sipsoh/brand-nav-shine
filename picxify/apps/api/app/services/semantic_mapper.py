@@ -61,6 +61,9 @@ class SemanticMapping:
 
 # (semantic_type, name regex, required detected types or None for any)
 NAME_RULES: list[tuple[str, str, set[str] | None]] = [
+    # Per-unit prices/rates precede revenue so 'Unit Price' never becomes the
+    # summable primary measure over an actual Revenue column.
+    ("other", r"unit_price|price_per|unit_cost|rate_per|per_unit", {"integer", "float", "currency"}),
     ("revenue", r"revenue|deal_amount|amount|sales|income|arr|mrr|price|value", {"integer", "float", "currency"}),
     ("cost", r"spend|cost|budget|expense|cac|cpa", {"integer", "float", "currency"}),
     ("conversion", r"conversion|signup|lead|purchase|order", {"integer", "float"}),

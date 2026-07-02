@@ -10,7 +10,8 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 FOOTER_PATTERN = re.compile(r"^\s*(grand\s+)?(sub)?total[s]?\b", re.IGNORECASE)
-CURRENCY_PATTERN = re.compile(r"^\s*-?[$€£]\s*[\d,]+(\.\d+)?\s*$")
+# Covers "$1,234.56", "-$1,234", and accounting-style negatives "($1,234.56)".
+CURRENCY_PATTERN = re.compile(r"^\s*(-?[$€£]\s*[\d,]+(\.\d+)?|\(\s*[$€£]?\s*[\d,]+(\.\d+)?\s*\))\s*$")
 PERCENT_PATTERN = re.compile(r"^\s*-?[\d,]+(\.\d+)?\s*%\s*$")
 NUMERIC_PATTERN = re.compile(r"^\s*-?[\d,]+(\.\d+)?\s*$")
 
@@ -176,15 +177,17 @@ def _coerce_numeric_strings(
         def to_number(value):
             if not isinstance(value, str):
                 return value
-            cleaned = re.sub(r"[$€£,%\s]", "", value)
+            negative = bool(re.match(r"^\s*\(.*\)\s*$", value))  # accounting negatives
+            cleaned = re.sub(r"[$€£,%\s()]", "", value)
             if cleaned in {"", "-"}:
                 return None
             try:
-                return float(cleaned)
+                number = float(cleaned)
             except ValueError:
                 # Coercion fires at >= 90% parseable; the stragglers (stray
                 # headers, typos) become nulls rather than crashing the job.
                 return None
+            return -number if negative else number
 
         if currency_ratio >= COERCION_THRESHOLD:
             df[column] = df[column].map(to_number)
