@@ -388,11 +388,13 @@ def _build_chart_widgets(ctx: PlanningContext) -> tuple[list[dict], list[dict]]:
         )
 
     if dimension:
+        # Magnitude comparison across nominal categories -> single-hue bars
+        # (a donut is for part-to-whole at a glance, not comparing values).
         breakdown_widgets.append(
             _chart_widget(
                 "w_chart_breakdown",
                 f"{metric_label} by {dimension.name}",
-                "donut",
+                "horizontal_bar",
                 {
                     "tableId": ctx.table_id,
                     "measures": metric_measures,
@@ -449,7 +451,7 @@ def _build_chart_widgets(ctx: PlanningContext) -> tuple[list[dict], list[dict]]:
             _chart_widget(
                 "w_chart_funnel",
                 f"Records by {stage.name}",
-                "funnel",
+                "funnel" if _funnel_reads_as_flow(ctx, stage) else "horizontal_bar",
                 {
                     "tableId": ctx.table_id,
                     "measures": [{"column": stage.name, "aggregation": "count", "alias": "records"}],
@@ -462,6 +464,29 @@ def _build_chart_widgets(ctx: PlanningContext) -> tuple[list[dict], list[dict]]:
         )
 
     return time_widgets, breakdown_widgets
+
+
+def _funnel_reads_as_flow(ctx: PlanningContext, stage: ColumnCtx) -> bool:
+    """A funnel is for ordered pipeline flow (Lead -> Qualified -> Won).
+
+    Status columns (Open/Closed/Pending) are nominal states, and any
+    distribution where one value dwarfs the rest collapses the remaining
+    wedges into unreadable slivers — both read better as bars.
+    """
+    if stage.semantic_type != "stage":
+        return False
+    counts = sorted(
+        (
+            int(fact["value"])
+            for fact in ctx.facts
+            if str(fact.get("id", "")).startswith("fact_stage_")
+            and isinstance(fact.get("value"), (int, float))
+        ),
+        reverse=True,
+    )
+    if len(counts) < 3:
+        return False
+    return counts[1] >= counts[0] * 0.25
 
 
 def _chart_widget(

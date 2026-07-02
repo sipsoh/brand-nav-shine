@@ -119,6 +119,62 @@ def test_kpi_values_are_human_formatted():
     assert format_kpi_value("already formatted", None) == "already formatted"
 
 
+def _stage_chart_type(stage_values, stage_semantic):
+    """Plan a spec around a stage-like column; return the chart type chosen
+    for the 'Records by <stage>' widget."""
+    n = len(stage_values)
+    df = pd.DataFrame(
+        {
+            "region": (["East", "West"] * n)[:n],
+            "deal_stage": stage_values,
+            "amount": [100.0] * n,
+        }
+    )
+    columns = [
+        ColumnCtx("region", "category", "region", "dimension"),
+        ColumnCtx("deal_stage", "category", stage_semantic, "dimension"),
+        ColumnCtx("amount", "float", "revenue", "measure"),
+    ]
+    meta = [ColumnMeta(c.name, c.detected_type, c.semantic_type, c.role_hint) for c in columns]
+    result = compute_insights(df, "tbl_1", meta)
+    ctx = PlanningContext(
+        dataset_id="ds_1",
+        dataset_name="Pipeline",
+        table_id="tbl_1",
+        table_name="deals",
+        row_count=len(df),
+        column_count=len(df.columns),
+        snapshot_uri="workspaces/x/datasets/y/tables/deals.parquet",
+        columns=columns,
+        facts=[f.to_dict() for f in result.facts],
+        insights=[i.to_dict() for i in result.insights],
+        assumptions=[],
+        use_case="sales",
+        audience="client",
+        template=select_template("sales"),
+        date_grain=None,
+    )
+    spec = build_fallback_spec(ctx)
+    for section in spec["sections"]:
+        for widget in section["widgets"]:
+            if widget["id"] == "w_chart_funnel":
+                return widget["chart"]["chartType"]
+    return None
+
+
+def test_funnel_only_for_pipeline_shaped_stage_columns():
+    # A real pipeline declines stage by stage -> funnel reads as flow.
+    pipeline = ["Lead"] * 8 + ["Qualified"] * 6 + ["Proposal"] * 4 + ["Won"] * 2
+    assert _stage_chart_type(pipeline, "stage") == "funnel"
+    # Statuses are nominal states, not a flow -> bars, even when skewed.
+    statuses = ["Closed"] * 30 + ["Open", "Pending", "Assigned"]
+    assert _stage_chart_type(statuses, "status") == "horizontal_bar"
+    # A stage column where one value dwarfs the rest would render as
+    # slivers -> degrade to bars.
+    lopsided = ["Won"] * 40 + ["Lead", "Qualified", "Proposal"]
+    assert _stage_chart_type(lopsided, "stage") == "horizontal_bar"
+
+
 def test_broken_chart_widgets_are_dropped_not_rendered():
     df = marketing_df()
     ctx = make_ctx(df)

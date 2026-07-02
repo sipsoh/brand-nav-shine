@@ -23,10 +23,17 @@ PAGE = """<!doctype html>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #f6f6f2; --card: #ffffff; --line: #e8e8e0; --ink: #101613;
-    --muted: #5f6c64; --faint: #96a29a; --accent: #0d9668; --accent2: #34d399;
-    --accent-soft: #e7f6ef; --hero1: #0a1410; --hero2: #10352a;
-    --radius: 18px; --shadow: 0 1px 2px rgba(12,20,16,.04), 0 8px 24px rgba(12,20,16,.06);
+    /* Chrome & ink tokens (docs/engineering/design-system.md) */
+    --bg: #f9f9f7;               /* page plane */
+    --card: #fcfcfb;             /* chart surface */
+    --line: rgba(11,11,11,.10);  /* hairline border ring */
+    --ink: #0b0b0b;              /* primary */
+    --muted: #52514e;            /* secondary */
+    --faint: #898781;            /* muted (axis/labels) */
+    --delta-good: #006300; --delta-bad: #d03b3b;
+    --accent: #0d9668; --accent2: #34d399; --accent-soft: #e7f6ef;
+    --hero1: #0a1410; --hero2: #10352a;
+    --radius: 16px; --shadow: 0 1px 2px rgba(11,11,11,.03), 0 6px 20px rgba(11,11,11,.05);
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
@@ -69,17 +76,16 @@ PAGE = """<!doctype html>
 
   .sheet { max-width: 1240px; margin: -56px auto 0; padding: 0 28px 90px; }
 
-  /* KPI row */
+  /* KPI row — stat-tile contract: label / value (semibold, proportional
+     figures) / delta. No decorative stripes: the number is the design. */
   .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 16px; }
   .kpi { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
-         box-shadow: var(--shadow); padding: 20px 22px; position: relative; overflow: hidden; }
-  .kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px;
-                 background: linear-gradient(180deg, var(--accent), #a3e635); }
-  .kpi-label { font-size: 11px; font-weight: 700; letter-spacing: .09em;
-               text-transform: uppercase; color: var(--faint); }
-  .kpi-value { font-size: 30px; font-weight: 800; letter-spacing: -.02em; margin-top: 8px; }
+         box-shadow: var(--shadow); padding: 20px 22px; position: relative; }
+  .kpi-label { font-size: 12px; font-weight: 500; color: var(--muted); }
+  .kpi-value { font-size: 32px; font-weight: 600; letter-spacing: -.01em; margin-top: 6px;
+               color: var(--ink); }
   .kpi-change { font-size: 12px; color: var(--faint); margin-top: 2px; }
-  .up { color: #10b981; } .down { color: #ef4444; }
+  .up { color: var(--delta-good); font-size: 18px; } .down { color: var(--delta-bad); font-size: 18px; }
   .src { position: absolute; top: 14px; right: 14px; border: 0; background: transparent;
          color: #c3c6d9; cursor: pointer; font-size: 14px; padding: 2px; }
   .src:hover { color: var(--accent); }
@@ -104,7 +110,8 @@ PAGE = """<!doctype html>
   .span-12 { grid-column: span 12; } .span-8 { grid-column: span 8; }
   .span-6 { grid-column: span 6; } .span-4 { grid-column: span 4; }
   @media (max-width: 900px) { .grid > * { grid-column: span 12 !important; } }
-  .panel-title { font-weight: 700; font-size: 14.5px; letter-spacing: -.01em; padding-right: 30px; }
+  .panel-title { font-weight: 600; font-size: 14px; color: var(--ink); padding-right: 30px; }
+  .panel-sub { font-size: 12px; color: var(--faint); margin-top: 1px; }
   .chart-box { height: 310px; margin-top: 10px; }
   .span-12 .chart-box { height: 380px; }
 
@@ -391,6 +398,11 @@ const withCompact = (option) => {
     }
   }
   clone.tooltip = { ...(clone.tooltip || {}), valueFormatter: compactNum };
+  for (const series of clone.series || []) {
+    if (series.type === 'bar' && series.label && series.label.show && !series.label.formatter) {
+      series.label.formatter = (params) => compactNum(params.value);
+    }
+  }
   return clone;
 };
 for (const [id, option] of pending) {

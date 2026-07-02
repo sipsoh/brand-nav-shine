@@ -1,5 +1,31 @@
 # Changelog
 
+## Data-viz design system v5 (2026-07-02)
+
+Rebuilt the dashboard visual language on a validated data-viz method (form-first,
+color-by-job) instead of eyeballed styling. Documented in
+`docs/engineering/design-system.md`.
+
+- **Validated palettes**: categorical palette (8 slots, fixed order, never cycled)
+  and single-hue ordinal blue ramp both pass the CVD/contrast validator
+  (adjacent-pair CVD ΔE 24.2). Colors assigned by slot, identity stable across
+  filters.
+- **Form rules in the planner**: magnitude breakdowns are single-hue horizontal
+  bars with values at the bar tips (never a hue per bar); funnels are reserved for
+  true pipeline stages whose counts decline like a flow — status columns
+  (Open/Closed/Pending) and one-value-dominates distributions degrade to bars
+  (`_funnel_reads_as_flow` guard).
+- **Quiet chrome**: hairline gridlines, muted axis ink, silent value axis on
+  horizontal bars (tip labels carry the exact values), long category names
+  ellipsize, 2px surface gaps between touching fills, 2px surface rings on line
+  markers, rounded data-ends only.
+- **Readable dates**: axis labels render "Jan 2026" / "Jan 05" / "Q1 2026" from
+  the date grain, never raw ISO timestamps.
+- **Stat-tile KPI contract**: label / 32px semibold value / arrow delta in
+  success/danger ink; no gradient stripes. Compact axis values (1.2M, 615.7K)
+  injected at render time in both the web renderer and the eval HTML renderer.
+- 115 tests, 10/10 evals.
+
 ## Accuracy fixes from real-world workbook testing (2026-07-02)
 
 Driven by a real 21-sheet IT ticket-analysis workbook that produced a misleading dashboard:

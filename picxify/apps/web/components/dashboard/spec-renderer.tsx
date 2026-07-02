@@ -189,22 +189,21 @@ function KpiCard({
   widget: SpecWidget;
   onTrace: (title: string, trace: SourceTrace) => void;
 }) {
+  // Stat-tile contract: label / value (semibold, proportional figures) /
+  // delta in success/danger ink. The number is the design — no decoration.
   const kpi = widget.kpi!;
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-      <span className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-emerald-500 to-lime-400" />
+    <div className="relative rounded-2xl border border-[rgba(11,11,11,0.10)] bg-[#fcfcfb] p-5 shadow-sm">
       {kpi.sourceTrace && (
         <TraceButton onClick={() => onTrace(kpi.label, kpi.sourceTrace!)} />
       )}
-      <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-        {kpi.label}
-      </p>
-      <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-neutral-900 lg:text-3xl">
+      <p className="text-xs font-medium text-[#52514e]">{kpi.label}</p>
+      <p className="mt-1.5 text-3xl font-semibold tracking-[-0.01em] text-[#0b0b0b]">
         {typeof kpi.value === "number" ? kpi.value.toLocaleString() : kpi.value}
-        {kpi.direction === "up" && <span className="ml-1 text-lg text-emerald-500">▲</span>}
-        {kpi.direction === "down" && <span className="ml-1 text-lg text-red-500">▼</span>}
+        {kpi.direction === "up" && <span className="ml-1 text-lg text-[#006300]">▲</span>}
+        {kpi.direction === "down" && <span className="ml-1 text-lg text-[#d03b3b]">▼</span>}
       </p>
-      {kpi.changeLabel && <p className="text-xs text-neutral-400">{kpi.changeLabel}</p>}
+      {kpi.changeLabel && <p className="mt-0.5 text-xs text-[#898781]">{kpi.changeLabel}</p>}
     </div>
   );
 }
@@ -268,11 +267,11 @@ function ChartPanel({
   const chart = widget.chart!;
   const option = chart.echartsOption;
   return (
-    <div className={`relative rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm ${span}`}>
+    <div className={`relative rounded-2xl border border-[rgba(11,11,11,0.10)] bg-[#fcfcfb] p-5 shadow-sm ${span}`}>
       {chart.sourceTrace && (
         <TraceButton onClick={() => onTrace(widget.title, chart.sourceTrace!)} />
       )}
-      <p className="pr-8 text-sm font-bold tracking-tight text-neutral-900">{widget.title}</p>
+      <p className="pr-8 text-sm font-semibold text-[#0b0b0b]">{widget.title}</p>
       <div className="mt-2">
         {option && Object.keys(option).length > 0 ? (
           <EChartsChart option={option} height={tall ? 380 : 310} />

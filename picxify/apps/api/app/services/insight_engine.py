@@ -453,7 +453,7 @@ def _funnel(df, table_id, stage_column: ColumnMeta, measure: ColumnMeta | None,
         win_rate = won / (won + lost)
         fact = ComputedFact(
             id="fact_win_rate",
-            label="Win rate (won / (won + lost))",
+            label="Win rate",
             value=round(win_rate, 4),
             unit="percent",
             source_trace=SourceTrace(

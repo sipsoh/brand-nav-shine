@@ -25,6 +25,14 @@ function withCompactFormatting(option: Record<string, unknown>): Record<string, 
     }
   }
   clone.tooltip = { ...((clone.tooltip as object) ?? {}), valueFormatter: compact };
+  const series = Array.isArray(clone.series) ? (clone.series as Record<string, unknown>[]) : [];
+  for (const item of series) {
+    const label = item.label as { show?: boolean; formatter?: unknown } | undefined;
+    // Bars carry value-at-the-tip labels; other forms (funnel, pie) label identity.
+    if (item.type === "bar" && label?.show && !label.formatter) {
+      label.formatter = (params: { value: unknown }) => compact(params.value);
+    }
+  }
   return clone;
 }
 
