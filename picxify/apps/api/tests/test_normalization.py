@@ -69,3 +69,24 @@ def test_mixed_content_column_left_alone():
     df = pd.DataFrame({"notes": ["call back", "$100", "next week"]})
     result = normalize_table(df)
     assert result.dataframe["notes"].tolist() == ["call back", "$100", "next week"]
+
+
+def test_mixed_type_column_becomes_text():
+    df = pd.DataFrame({"flag": [1, 2, "Yes", 4, 5]})
+    result = normalize_table(df)
+    assert result.dataframe["flag"].tolist() == ["1", "2", "Yes", "4", "5"]
+    assert "mixed_types_normalized" in note_types(result)
+    # Must be Parquet-serializable after normalization.
+    from io import BytesIO
+
+    result.dataframe.to_parquet(BytesIO(), index=False)
+
+
+def test_mostly_numeric_strings_with_stray_header_value():
+    # >= 90% numeric strings + one header-like straggler: converts, straggler -> null.
+    values = [str(n) for n in range(19)] + ["EmployeeId"]
+    df = pd.DataFrame({"employee_id": values})
+    result = normalize_table(df)
+    converted = result.dataframe["employee_id"]
+    assert converted.iloc[0] == 0.0
+    assert pd.isna(converted.iloc[-1])

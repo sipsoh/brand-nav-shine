@@ -56,6 +56,7 @@ def normalize_table(dataframe: pd.DataFrame) -> NormalizedTable:
     df = _trim_strings(df)
     df = _coerce_numeric_strings(df, notes, type_hints)
     df = _coerce_dates(df, notes)
+    df = _stringify_mixed_columns(df, notes)
 
     duplicate_rows = int(df.duplicated().sum())
     if duplicate_rows:
@@ -176,7 +177,14 @@ def _coerce_numeric_strings(
             if not isinstance(value, str):
                 return value
             cleaned = re.sub(r"[$€£,%\s]", "", value)
-            return float(cleaned) if cleaned not in {"", "-"} else None
+            if cleaned in {"", "-"}:
+                return None
+            try:
+                return float(cleaned)
+            except ValueError:
+                # Coercion fires at >= 90% parseable; the stragglers (stray
+                # headers, typos) become nulls rather than crashing the job.
+                return None
 
         if currency_ratio >= COERCION_THRESHOLD:
             df[column] = df[column].map(to_number)
@@ -211,6 +219,34 @@ def _coerce_numeric_strings(
                     message=f"Converted '{column}' from text to numbers.",
                     column=column,
                     meta={"to": "number"},
+                )
+            )
+    return df
+
+
+def _stringify_mixed_columns(df: pd.DataFrame, notes: list[TransformNote]) -> pd.DataFrame:
+    """Columns still holding a mix of Python types after coercion (e.g. numbers
+    plus the odd 'Yes') become consistent text. Mixed columns cannot be
+    aggregated meaningfully and cannot be written to Parquet."""
+    for column in df.columns:
+        if not pd.api.types.is_object_dtype(df[column]):
+            continue
+        non_null = df[column].dropna()
+        if non_null.empty:
+            continue
+        kinds = {type(value).__name__ for value in non_null}
+        if len(kinds) > 1:
+            df[column] = df[column].map(lambda v: None if pd.isna(v) else str(v))
+            notes.append(
+                TransformNote(
+                    finding_type="mixed_types_normalized",
+                    severity="warning",
+                    message=(
+                        f"'{column}' mixes value types ({', '.join(sorted(kinds))}); "
+                        "treated as text."
+                    ),
+                    column=str(column),
+                    meta={"types": sorted(kinds)},
                 )
             )
     return df

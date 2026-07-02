@@ -77,6 +77,7 @@ def _run(
     _progress(db, job, *PROGRESS_STEPS[1])
     total_rows = 0
     table_ids: list[str] = []
+    table_qualities: list[float] = []
 
     for raw in raw_tables:
         normalized = normalize_table(raw.dataframe)
@@ -159,6 +160,7 @@ def _run(
         )
 
         table_quality = max(0.0, 1.0 - penalty)
+        table_qualities.append(table_quality)
         table.profile = {
             "columns": [c.normalized_name for c in profile.columns],
             "qualityScore": round(table_quality, 4),
@@ -172,11 +174,11 @@ def _run(
     all_findings = db.scalars(
         select(DataQualityFinding).where(DataQualityFinding.dataset_id == dataset.id)
     ).all()
-    severity_penalty = sum(
-        0.15 if f.severity == "critical" else 0.05 if f.severity == "warning" else 0.0
-        for f in all_findings
+    # Average per-table quality: a 20-sheet workbook should not read as 0%
+    # just because penalties accumulate across sheets.
+    dataset.quality_score = round(
+        sum(table_qualities) / len(table_qualities) if table_qualities else 0.0, 4
     )
-    dataset.quality_score = round(max(0.0, 1.0 - severity_penalty), 4)
     dataset.row_count = total_rows
     dataset.table_count = len(raw_tables)
     dataset.profile = {
@@ -257,7 +259,19 @@ def _apply_semantic_mapping(db: Session, dataset: Dataset, uploaded_file: Upload
 
 def _write_snapshot(storage, dataset: Dataset, table_name: str, dataframe) -> str:
     buffer = BytesIO()
-    dataframe.to_parquet(buffer, index=False)
+    try:
+        dataframe.to_parquet(buffer, index=False)
+    except Exception:
+        # Safety net for anything Arrow still cannot serialize: stringify the
+        # offending object columns and retry once.
+        import pandas as pd
+
+        safe = dataframe.copy()
+        for column in safe.columns:
+            if pd.api.types.is_object_dtype(safe[column]):
+                safe[column] = safe[column].map(lambda v: None if pd.isna(v) else str(v))
+        buffer = BytesIO()
+        safe.to_parquet(buffer, index=False)
     object_key = (
         f"workspaces/{dataset.workspace_id}/datasets/{dataset.id}/tables/{table_name}.parquet"
     )
