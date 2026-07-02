@@ -478,6 +478,237 @@ def dirty_values_csv() -> None:
     (OUT / "dirty_values.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+# --- round 3: the scattered-data catalog -------------------------------------
+
+
+def financial_pl_statement() -> None:
+    """QuickBooks-style P&L: banner block, label column with section rows,
+    month columns plus a Total column, mid-table Total Income/Total Expenses
+    rows, and a Net Income line — all of which must not double-count."""
+    months = [date(2026, m, 1).strftime("%b 2026") for m in range(1, 7)]
+    income_lines = ["Consulting Revenue", "Retainer Fees", "Workshop Income"]
+    expense_lines = ["Salaries", "Rent", "Software", "Travel", "Marketing"]
+
+    def row(label, base):
+        values = [round(base * (0.85 + random.random() * 0.3), 2) for _ in months]
+        return [label, *values, round(sum(values), 2)]
+
+    grid: list[list] = [
+        ["Acme Consulting LLC"] + [None] * 7,
+        ["Profit and Loss"] + [None] * 7,
+        ["January - June 2026"] + [None] * 7,
+        [None] * 8,
+        [None, *months, "Total"],
+        ["Income"] + [None] * 7,
+    ]
+    income_rows = [row(label, random.uniform(18_000, 40_000)) for label in income_lines]
+    expense_rows = [row(label, random.uniform(4_000, 16_000)) for label in expense_lines]
+    grid.extend(income_rows)
+    grid.append(["Total Income", *[round(sum(r[i] for r in income_rows), 2) for i in range(1, 8)]])
+    grid.append(["Expenses"] + [None] * 7)
+    grid.extend(expense_rows)
+    grid.append(["Total Expenses", *[round(sum(r[i] for r in expense_rows), 2) for i in range(1, 8)]])
+    grid.append(
+        [
+            "Net Income",
+            *[
+                round(sum(r[i] for r in income_rows) - sum(r[i] for r in expense_rows), 2)
+                for i in range(1, 8)
+            ],
+        ]
+    )
+    with pd.ExcelWriter(OUT / "financial_pl_statement.xlsx", engine="openpyxl") as writer:
+        pd.DataFrame(grid).to_excel(writer, sheet_name="Profit and Loss", index=False, header=False)
+
+
+def pivot_with_totals() -> None:
+    """Crosstab with BOTH a Grand Total column and a Total row."""
+    regions = ["West", "East", "Central", "South"]
+    months = [date(2026, m, 1).strftime("%b 2026") for m in range(1, 7)]
+    grid: list[list] = [["Region", *months, "Grand Total"]]
+    column_sums = [0.0] * len(months)
+    for region in regions:
+        values = [round(random.uniform(20_000, 60_000), 2) for _ in months]
+        for i, v in enumerate(values):
+            column_sums[i] += v
+        grid.append([region, *values, round(sum(values), 2)])
+    grid.append(["Total", *[round(s, 2) for s in column_sums], round(sum(column_sums), 2)])
+    with pd.ExcelWriter(OUT / "pivot_with_totals.xlsx", engine="openpyxl") as writer:
+        pd.DataFrame(grid).to_excel(writer, sheet_name="Revenue by Region", index=False, header=False)
+
+
+def grouped_merged_labels() -> None:
+    """Vertically merged category labels: the group name appears once, blank
+    for the rest of its group rows."""
+    categories = {
+        "Beverages": ["Espresso", "Latte", "Cold Brew", "Tea"],
+        "Food": ["Croissant", "Bagel", "Salad", "Panini"],
+        "Retail": ["Beans 1lb", "Mug", "Gift Card"],
+    }
+    grid: list[list] = [["Category", "Item", "Amount"]]
+    for category, items in categories.items():
+        for index, item in enumerate(items):
+            grid.append(
+                [category if index == 0 else None, item, money(random.uniform(800, 6_000))]
+            )
+    with pd.ExcelWriter(OUT / "grouped_merged_labels.xlsx", engine="openpyxl") as writer:
+        pd.DataFrame(grid).to_excel(writer, sheet_name="Category Sales", index=False, header=False)
+
+
+def units_row_report() -> None:
+    """A units annotation row ('USD', 'count', '%') right under the header."""
+    grid: list[list] = [
+        ["Month", "Revenue", "Orders", "Refund Rate"],
+        [None, "USD", "count", "%"],
+    ]
+    for m in range(1, 7):
+        grid.append(
+            [
+                date(2026, m, 1).strftime("%b 2026"),
+                round(random.uniform(30_000, 90_000), 2),
+                random.randrange(200, 900),
+                round(random.uniform(0.5, 4.0), 2),
+            ]
+        )
+    with pd.ExcelWriter(OUT / "units_row_report.xlsx", engine="openpyxl") as writer:
+        pd.DataFrame(grid).to_excel(writer, sheet_name="Monthly", index=False, header=False)
+
+
+def transposed_metrics() -> None:
+    """Fields as rows, one column per store — a transposed export."""
+    stores = ["Store A", "Store B", "Store C", "Store D", "Store E", "Store F"]
+    grid = [
+        ["Metric", *stores],
+        ["Revenue", *[round(random.uniform(80_000, 220_000), 2) for _ in stores]],
+        ["Orders", *[random.randrange(900, 4_000) for _ in stores]],
+        ["Manager", *["Kim", "Ray", "Ana", "Lee", "Sam", "Joy"]],
+    ]
+    with pd.ExcelWriter(OUT / "transposed_metrics.xlsx", engine="openpyxl") as writer:
+        pd.DataFrame(grid).to_excel(writer, sheet_name="Store Metrics", index=False, header=False)
+
+
+def serial_dates() -> None:
+    """Order dates as raw Excel serial numbers (45000 ≈ 2023-03-15)."""
+    rows = []
+    base_serial = 46023  # 2026-01-01
+    for i in range(200):
+        rows.append(
+            {
+                "Order Date": base_serial + random.randrange(0, 170),
+                "Channel": random.choice(["Web", "Store", "Phone"]),
+                "Amount": round(random.uniform(40, 900), 2),
+            }
+        )
+    with pd.ExcelWriter(OUT / "serial_dates.xlsx", engine="openpyxl") as writer:
+        pd.DataFrame(rows).to_excel(writer, sheet_name="Orders", index=False)
+
+
+def compact_dates_csv() -> None:
+    """Dates as YYYYMMDD integers."""
+    lines = ["Created,Team,Sales"]
+    for _ in range(180):
+        month = random.randrange(1, 7)
+        day = random.randrange(1, 28)
+        lines.append(
+            f"2026{month:02d}{day:02d},{random.choice(['North', 'South', 'East'])},"
+            f"{random.uniform(500, 8000):.2f}"
+        )
+    (OUT / "compact_dates.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def currency_codes_csv() -> None:
+    """ISO currency codes instead of symbols, Swiss apostrophe thousands, and
+    compact k/M suffixes."""
+    lines = ["Client,Amount,Fees,Pipeline Value"]
+    for i in range(150):
+        amount = f'"{random.uniform(900, 60000):,.2f} USD"'
+        fees = f"{random.uniform(1000, 9000):,.2f}".replace(",", "'") + " CHF"
+        pipeline = f"${random.choice([1.2, 2.5, 3.8, 0.9, 5.4])}M"
+        lines.append(f"Client {i % 40},{amount},{fees},{pipeline}")
+    (OUT / "currency_codes.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def bank_statement_csv() -> None:
+    """Classic bank export: Debit and Credit as separate half-empty columns."""
+    lines = ["Date,Description,Debit,Credit,Balance"]
+    balance = 25_000.0
+    start = date(2026, 1, 2)
+    for i in range(160):
+        day = start + timedelta(days=i)
+        if random.random() < 0.55:
+            debit = round(random.uniform(20, 2_400), 2)
+            balance -= debit
+            lines.append(f"{day.isoformat()},Payment {i},{debit},,{balance:.2f}")
+        else:
+            credit = round(random.uniform(500, 9_000), 2)
+            balance += credit
+            lines.append(f"{day.isoformat()},Deposit {i},,{credit},{balance:.2f}")
+    (OUT / "bank_statement.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def pipe_export_txt() -> None:
+    """Pipe-delimited .txt export."""
+    lines = ["Date|Product|Region|Revenue"]
+    start = date(2026, 1, 5)
+    for _ in range(140):
+        day = start + timedelta(days=random.randrange(160))
+        lines.append(
+            f"{day.isoformat()}|{random.choice(['Basic', 'Pro', 'Max'])}|"
+            f"{random.choice(['NA', 'EMEA', 'APAC'])}|{random.uniform(200, 9000):.2f}"
+        )
+    (OUT / "pipe_export.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def csv_with_preamble() -> None:
+    """Title and metadata lines above the real CSV header."""
+    lines = [
+        "Sales Export Report",
+        "Generated: 2026-07-01 by reporting-suite",
+        "Filters: region=All; period=H1",
+        "",
+        "Date,Region,Revenue",
+    ]
+    start = date(2026, 1, 5)
+    for _ in range(150):
+        day = start + timedelta(days=random.randrange(160))
+        lines.append(
+            f"{day.isoformat()},{random.choice(['West', 'East', 'North'])},"
+            f"{random.uniform(300, 7000):.2f}"
+        )
+    (OUT / "csv_with_preamble.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def quoted_newlines_csv() -> None:
+    """Quoted fields containing embedded newlines and commas."""
+    lines = ["Date,Customer,Comment,Revenue"]
+    start = date(2026, 2, 2)
+    for i in range(120):
+        day = start + timedelta(days=random.randrange(120))
+        comment = f'"Follow-up needed,\nsee ticket #{1000 + i}"'
+        lines.append(f"{day.isoformat()},Customer {i % 30},{comment},{random.uniform(100, 4000):.2f}")
+    (OUT / "quoted_newlines.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def stock_prices_csv() -> None:
+    """OHLC price data: 'Open' must read as a price, never email engagement,
+    and prices must never be summed into a headline."""
+    lines = ["Date,Open,High,Low,Close,Volume"]
+    price = 42.0
+    start = date(2026, 1, 2)
+    for i in range(130):
+        day = start + timedelta(days=i)
+        drift = random.uniform(-1.5, 1.6)
+        o = price
+        c = max(5.0, price + drift)
+        h = max(o, c) + random.uniform(0, 1.2)
+        low = min(o, c) - random.uniform(0, 1.2)
+        price = c
+        lines.append(
+            f"{day.isoformat()},{o:.2f},{h:.2f},{low:.2f},{c:.2f},{random.randrange(80_000, 900_000)}"
+        )
+    (OUT / "stock_prices.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 if __name__ == "__main__":
     sales_pipeline()
     ecommerce_orders()
@@ -496,4 +727,17 @@ if __name__ == "__main__":
     month_only_pivot()
     single_gap_scatter()
     dirty_values_csv()
+    financial_pl_statement()
+    pivot_with_totals()
+    grouped_merged_labels()
+    units_row_report()
+    transposed_metrics()
+    serial_dates()
+    compact_dates_csv()
+    currency_codes_csv()
+    bank_statement_csv()
+    pipe_export_txt()
+    csv_with_preamble()
+    quoted_newlines_csv()
+    stock_prices_csv()
     print("fixtures written to", OUT)

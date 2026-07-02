@@ -9,12 +9,26 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-FOOTER_PATTERN = re.compile(r"^\s*(grand\s+)?(sub)?total[s]?\b", re.IGNORECASE)
-# Covers "$1,234.56", "-$1,234", and accounting-style negatives "($1,234.56)".
-CURRENCY_PATTERN = re.compile(r"^\s*(-?[$€£]\s*[\d,]+(\.\d+)?|\(\s*[$€£]?\s*[\d,]+(\.\d+)?\s*\))\s*$")
+FOOTER_PATTERN = re.compile(
+    r"^\s*((grand\s+)?(sub)?total[s]?\b|net\s+(income|profit|loss|revenue)\b)", re.IGNORECASE
+)
+# Covers "$1,234.56", "-$1,234", accounting negatives "($1,234.56)", and
+# Swiss apostrophe thousands ("$1'234.56").
+CURRENCY_PATTERN = re.compile(
+    r"^\s*(-?[$€£]\s*[\d,']+(\.\d+)?|\(\s*[$€£]?\s*[\d,']+(\.\d+)?\s*\))\s*$"
+)
 PERCENT_PATTERN = re.compile(r"^\s*-?[\d,]+(\.\d+)?\s*%\s*$")
 # Trailing minus ("1,234.56-") is SAP/accounting-export style.
-NUMERIC_PATTERN = re.compile(r"^\s*-?[\d,]+(\.\d+)?\s*-?\s*$")
+NUMERIC_PATTERN = re.compile(r"^\s*-?[\d,']+(\.\d+)?\s*-?\s*$")
+# "1234.56 USD" / "EUR 999" — ISO currency codes instead of symbols.
+ISO_CODES = r"usd|eur|gbp|cad|aud|chf|jpy|inr|mxn|brl"
+CODE_CURRENCY_PATTERN = re.compile(
+    rf"^\s*(?:(?P<pre>{ISO_CODES})\s+)?-?[\d,'. ]+(?:\s*(?P<post>{ISO_CODES}))?\s*$",
+    re.IGNORECASE,
+)
+# Compact magnitude suffixes: "$1.2M", "3.4k", "2B".
+SUFFIX_NUMBER_PATTERN = re.compile(r"^\s*-?[$€£]?\s*\d+(\.\d+)?\s*[kKmMbB]\s*$")
+SUFFIX_MULTIPLIERS = {"k": 1e3, "m": 1e6, "b": 1e9}
 # European style: dot or space as thousands separator, comma as decimal
 # ("1.234,56", "1 234,56"), optionally with a currency symbol and a trailing
 # minus. Requires a comma-decimal or a separator group so it cannot swallow
@@ -65,8 +79,10 @@ def normalize_table(dataframe: pd.DataFrame, table_name: str | None = None) -> N
     df = _drop_footer_rows(df, notes)
     df = _trim_strings(df)
     df = _null_placeholder_tokens(df, notes)
+    df = _fill_grouped_labels(df, notes)
     df = _coerce_numeric_strings(df, notes, type_hints)
     df = _coerce_dates(df, notes)
+    df = _coerce_serial_dates(df, notes)
     df = _unpivot_wide_periods(df, notes, table_name)
     df = _stringify_mixed_columns(df, notes)
 
@@ -138,24 +154,26 @@ def _dedupe_columns(df: pd.DataFrame, notes: list[TransformNote]) -> pd.DataFram
 
 
 def _drop_footer_rows(df: pd.DataFrame, notes: list[TransformNote]) -> pd.DataFrame:
+    """Total/subtotal rows double-count their detail rows wherever they sit —
+    financial statements carry them mid-table ('Total Income'), not just at
+    the bottom."""
     if df.empty:
         return df
     first_column = df.columns[0]
-    dropped = 0
-    # Walk up from the bottom; totals live in trailing rows.
-    while len(df) > 0:
-        value = df.iloc[-1][first_column]
-        if isinstance(value, str) and FOOTER_PATTERN.match(value):
-            df = df.iloc[:-1]
-            dropped += 1
-        else:
-            break
+    mask = df[first_column].map(
+        lambda v: isinstance(v, str) and bool(FOOTER_PATTERN.match(v))
+    )
+    dropped = int(mask.sum())
     if dropped:
+        df = df[~mask]
         notes.append(
             TransformNote(
                 finding_type="footer_rows_removed",
                 severity="info",
-                message=f"Excluded {dropped} summary/total row(s) so they do not distort analysis.",
+                message=(
+                    f"Excluded {dropped} summary/total row(s) so they do not "
+                    "double-count the detail rows."
+                ),
                 meta={"count": dropped},
             )
         )
@@ -242,9 +260,18 @@ def _coerce_numeric_strings(
         if len(strings) == 0 or len(strings) < len(values):
             continue
 
-        currency_ratio = strings.map(lambda v: bool(CURRENCY_PATTERN.match(v))).mean()
+        def has_iso_code(value: str) -> bool:
+            match = CODE_CURRENCY_PATTERN.match(value)
+            return bool(match and (match.group("pre") or match.group("post")))
+
+        currency_ratio = strings.map(
+            lambda v: bool(CURRENCY_PATTERN.match(v)) or has_iso_code(v)
+        ).mean()
         percent_ratio = strings.map(lambda v: bool(PERCENT_PATTERN.match(v))).mean()
-        numeric_ratio = strings.map(lambda v: bool(NUMERIC_PATTERN.match(v))).mean()
+        suffix_ratio = strings.map(lambda v: bool(SUFFIX_NUMBER_PATTERN.match(v))).mean()
+        numeric_ratio = strings.map(
+            lambda v: bool(NUMERIC_PATTERN.match(v)) or bool(SUFFIX_NUMBER_PATTERN.match(v))
+        ).mean()
         euro_ratio = strings.map(lambda v: bool(EURO_NUMERIC_PATTERN.match(v))).mean()
         euro_style = euro_ratio >= COERCION_THRESHOLD and euro_ratio > numeric_ratio
 
@@ -257,10 +284,16 @@ def _coerce_numeric_strings(
             if stripped.endswith("-") and not stripped.startswith("-"):
                 negative = True  # SAP-style trailing minus ("1,234.56-")
                 value = stripped[:-1]
+            multiplier = 1.0
+            suffix = value.strip()[-1:].lower()
+            if SUFFIX_NUMBER_PATTERN.match(value) and suffix in SUFFIX_MULTIPLIERS:
+                multiplier = SUFFIX_MULTIPLIERS[suffix]  # "$1.2M" -> x1e6
+                value = value.strip()[:-1]
+            value = re.sub(rf"(?i)\b({ISO_CODES})\b", "", value)  # "1234.56 USD"
             if euro_style:
                 # "1.234,56" / "1 234,56" -> "1234.56"
                 value = value.replace(".", "").replace(" ", "").replace(",", ".")
-            cleaned = re.sub(r"[$€£,%\s()]", "", value)
+            cleaned = re.sub(r"[$€£,'%\s()]", "", value)
             if cleaned in {"", "-"}:
                 return None
             try:
@@ -269,7 +302,7 @@ def _coerce_numeric_strings(
                 # Coercion fires at >= 90% parseable; the stragglers (stray
                 # headers, typos) become nulls rather than crashing the job.
                 return None
-            return -number if negative else number
+            return (-number if negative else number) * multiplier
 
         if euro_style:
             has_symbol = strings.map(lambda v: bool(re.search(r"[$€£]", v))).mean() >= 0.5
@@ -320,15 +353,108 @@ def _coerce_numeric_strings(
             )
         elif numeric_ratio >= COERCION_THRESHOLD:
             df[column] = df[column].map(to_number)
+            if (
+                suffix_ratio >= 0.5
+                and strings.map(lambda v: bool(re.search(r"[$€£]", v))).mean() >= 0.5
+            ):
+                type_hints[column] = "currency"  # "$1.2M" style
             notes.append(
                 TransformNote(
                     finding_type="type_converted",
                     severity="info",
                     message=f"Converted '{column}' from text to numbers.",
                     column=column,
-                    meta={"to": "number"},
+                    meta={"to": type_hints.get(column, "number")},
                 )
             )
+    return df
+
+
+DATE_NAME = re.compile(
+    r"date|(^|_)day($|_)|created|opened|closed|updated|modified|timestamp", re.IGNORECASE
+)
+
+
+def _coerce_serial_dates(df: pd.DataFrame, notes: list[TransformNote]) -> pd.DataFrame:
+    """Two numeric date encodings, only trusted on date-named columns:
+    Excel serials (45000 ≈ 2023) and compact ISO ints (20260213)."""
+    for column in df.columns:
+        if not DATE_NAME.search(str(column)):
+            continue
+        if not pd.api.types.is_numeric_dtype(df[column]):
+            continue
+        values = df[column].dropna()
+        if len(values) < 3:
+            continue
+        whole = (values % 1 == 0).mean() >= 0.99
+        as_serial = ((values >= 20000) & (values <= 60000)).mean()
+        as_compact = ((values >= 19000101) & (values <= 21001231)).mean()
+        if whole and as_serial >= 0.95:
+            df[column] = pd.to_datetime(
+                df[column], unit="D", origin="1899-12-30", errors="coerce"
+            )
+            style = "Excel serial numbers"
+        elif whole and as_compact >= 0.95:
+            parsed = pd.to_datetime(
+                df[column].dropna().astype(int).astype(str),
+                format="%Y%m%d",
+                errors="coerce",
+            )
+            if parsed.notna().mean() < COERCION_THRESHOLD:
+                continue
+            df[column] = pd.to_datetime(
+                df[column].map(lambda v: None if pd.isna(v) else str(int(v))),
+                format="%Y%m%d",
+                errors="coerce",
+            )
+            style = "YYYYMMDD integers"
+        else:
+            continue
+        notes.append(
+            TransformNote(
+                finding_type="dates_parsed",
+                severity="info",
+                message=f"Parsed '{column}' as dates ({style}).",
+                column=str(column),
+                meta={"style": style},
+            )
+        )
+    return df
+
+
+def _fill_grouped_labels(df: pd.DataFrame, notes: list[TransformNote]) -> pd.DataFrame:
+    """Vertically merged category cells (a group label written once, blank for
+    the rest of its group) arrive as NaN runs under each value. Fill them so
+    every row keeps its group; only the leading label column is considered."""
+    if df.empty or df.shape[1] < 2:
+        return df
+    column = df.columns[0]
+    series = df[column]
+    if not _is_text_dtype(series):
+        return df
+    null_ratio = series.isna().mean()
+    non_null = series.dropna()
+    if not (0.2 <= null_ratio <= 0.95):
+        return df
+    if pd.isna(series.iloc[0]) or non_null.nunique() < 2:
+        return df
+    # Real merged labels repeat blocks: distinctly fewer values than rows.
+    if non_null.nunique() > len(df) * 0.5:
+        return df
+    filled = int(series.isna().sum())
+    df[column] = series.ffill()
+    notes.append(
+        TransformNote(
+            finding_type="grouped_labels_filled",
+            severity="info",
+            message=(
+                f"'{column}' looks like a merged group-label column; carried "
+                f"{filled} label(s) down to their group rows."
+            ),
+            column=str(column),
+            meta={"filled": filled},
+        )
+    )
     return df
 
 
@@ -367,6 +493,11 @@ def _unpivot_wide_periods(
     """Crosstab reports ('Region | Jan 2026 | Feb 2026 | ...') reshape into
     long form so trends and breakdowns work. Only fires when the period
     columns clearly dominate and hold numbers."""
+    # A 'Total'/'Grand Total' column beside the period columns would
+    # double-count every row once unpivoted.
+    total_columns = [
+        c for c in df.columns if isinstance(c, str) and FOOTER_PATTERN.match(c)
+    ]
     periods = {c: _parse_period_header(c) for c in df.columns}
     period_columns = [c for c, parsed in periods.items() if parsed is not None]
     month_only = False
@@ -376,9 +507,22 @@ def _unpivot_wide_periods(
         month_columns = [c for c in df.columns if MONTH_ONLY.match(str(c))]
         if len(month_columns) >= MIN_PERIOD_COLUMNS:
             period_columns, month_only = month_columns, True
-    id_columns = [c for c in df.columns if c not in period_columns]
+    id_columns = [c for c in df.columns if c not in period_columns and c not in total_columns]
     if len(period_columns) < MIN_PERIOD_COLUMNS or len(id_columns) > 3:
         return df
+    if total_columns:
+        df = df.drop(columns=total_columns)
+        notes.append(
+            TransformNote(
+                finding_type="total_columns_removed",
+                severity="info",
+                message=(
+                    f"Excluded total column(s) {', '.join(map(str, total_columns))} "
+                    "before reshaping so periods are not double-counted."
+                ),
+                meta={"columns": [str(c) for c in total_columns]},
+            )
+        )
     numeric_columns = sum(
         1 for c in period_columns if pd.api.types.is_numeric_dtype(df[c])
     )

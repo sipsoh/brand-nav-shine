@@ -1,5 +1,28 @@
 # Changelog
 
+## Data engine round 3: the scattered-data catalog (2026-07-02)
+
+13 new torture fixtures modeled on real export formats (QuickBooks P&L, pivot
+exports, bank statements, SAP-style values, trading data, transposed store
+reports) — the eval library is now 30 workbooks/files. New engine capabilities,
+each locked in by fixtures and unit tests:
+
+- **Totals never double-count, anywhere**: mid-table Total Income/Expenses
+  rows and derived Net Income lines excluded; Grand Total columns dropped
+  before crosstab unpivot.
+- **Layout variants**: units rows (USD/count/%) under headers skipped;
+  transposed exports (fields as rows) detected and flipped; vertically merged
+  group labels carried down; blank leading label columns named "Category".
+- **Value formats**: ISO currency codes ("1,234.56 USD"), Swiss apostrophe
+  thousands ("1'234.56"), compact suffixes ("$1.2M"), Excel serial dates,
+  YYYYMMDD integer dates (both gated on date-named columns).
+- **CSV robustness**: title/metadata preamble lines above the header skipped
+  via re-sniff; pipe/tab delimited; quoted fields with embedded newlines.
+- **Semantic guards**: bank-statement Debit/Credit map to cost/revenue sides;
+  OHLC "Open" beside High/Low/Close is a price, never engagement, and prices
+  are never summed; trading Volume counts as quantity.
+- 30/30 evals; 148 tests; real 21-sheet workbook verified unchanged.
+
 ## Data engine round 2: unions, single-gap splits, dirty values (2026-07-02)
 
 Documented in `docs/engineering/data-engine.md`.

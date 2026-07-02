@@ -131,7 +131,8 @@ def test_headerless_numeric_block_gets_auto_columns():
     ]
     tables = parse_excel("report.xlsx", excel_bytes(grid))
     df = tables[0].dataframe
-    assert list(df.columns) == ["column_1", "column_2", "column_3"]
+    # The leading label column gets the human default name "Category".
+    assert list(df.columns) == ["Category", "column_2", "column_3"]
     assert len(df) == 3  # no data row was eaten as a header
     kinds = {n.finding_type for n in tables[0].notes}
     assert "no_header_detected" in kinds
@@ -334,6 +335,159 @@ def test_union_skipped_for_master_plus_filtered_views():
         [RawTable("Master", master), RawTable("Cat A", cat_a), RawTable("Cat B", cat_b)]
     )
     assert not any(t.name.startswith("Combined") for t in tables)
+
+
+def test_mid_table_total_rows_and_net_lines_dropped():
+    df = pd.DataFrame(
+        {
+            "Line": ["Consulting", "Retainers", "Total Income", "Rent", "Net Income"],
+            "Amount": [100.0, 50.0, 150.0, 40.0, 110.0],
+        }
+    )
+    normalized = normalize_table(df)
+    assert normalized.dataframe["Line"].tolist() == ["Consulting", "Retainers", "Rent"]
+    assert normalized.dataframe["Amount"].sum() == pytest.approx(190.0)
+
+
+def test_total_column_dropped_before_unpivot():
+    df = pd.DataFrame(
+        {
+            "Region": ["West", "East"],
+            "Jan 2026": [100.0, 90.0],
+            "Feb 2026": [110.0, 95.0],
+            "Mar 2026": [120.0, 99.0],
+            "Grand Total": [330.0, 284.0],
+        }
+    )
+    normalized = normalize_table(df, table_name="Revenue by Region")
+    out = normalized.dataframe
+    assert "Grand Total" not in out.columns
+    assert out["Revenue"].sum() == pytest.approx(614.0)  # totals not double-counted
+
+
+def test_grouped_merged_labels_forward_filled():
+    df = pd.DataFrame(
+        {
+            "Category": ["Beverages", None, None, "Food", None],
+            "Item": ["Espresso", "Latte", "Tea", "Bagel", "Salad"],
+            "Amount": [1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+    )
+    normalized = normalize_table(df)
+    assert normalized.dataframe["Category"].tolist() == [
+        "Beverages", "Beverages", "Beverages", "Food", "Food",
+    ]
+    kinds = {n.finding_type for n in normalized.notes}
+    assert "grouped_labels_filled" in kinds
+
+
+def test_units_row_under_header_skipped():
+    grid = [
+        ["Month", "Revenue", "Orders"],
+        [None, "USD", "count"],
+        ["Jan 2026", 100.0, 5],
+        ["Feb 2026", 120.0, 7],
+    ]
+    tables = parse_excel("units.xlsx", excel_bytes(grid))
+    df = tables[0].dataframe
+    assert len(df) == 2
+    assert df["Revenue"].tolist() == [100.0, 120.0]
+    kinds = {n.finding_type for n in tables[0].notes}
+    assert "units_row_skipped" in kinds
+
+
+def test_transposed_table_flipped_to_records():
+    grid = [
+        ["Metric", "Store A", "Store B", "Store C", "Store D"],
+        ["Revenue", 100.0, 120.0, 90.0, 105.0],
+        ["Orders", 11, 14, 9, 12],
+        ["Manager", "Kim", "Ray", "Ana", "Lee"],
+    ]
+    tables = parse_excel("stores.xlsx", excel_bytes(grid))
+    df = tables[0].dataframe
+    assert list(df.columns) == ["Record", "Revenue", "Orders", "Manager"]
+    assert len(df) == 4
+    assert df["Record"].tolist() == ["Store A", "Store B", "Store C", "Store D"]
+    assert df["Revenue"].tolist() == [100.0, 120.0, 90.0, 105.0]
+
+
+def test_regular_wide_table_not_transposed():
+    grid = [
+        ["Region", "Jan", "Feb", "Mar", "Apr"],
+        ["West", 1.0, 2.0, 3.0, 4.0],
+        ["East", 5.0, 6.0, 7.0, 8.0],
+    ]
+    tables = parse_excel("wide.xlsx", excel_bytes(grid))
+    # All rows numeric-homogeneous -> no field-type variety -> stays as-is.
+    assert "Record" not in tables[0].dataframe.columns
+
+
+def test_excel_serial_dates_on_date_named_column():
+    df = pd.DataFrame({"Order Date": [46023, 46054, 46085], "Amount": [1.0, 2.0, 3.0]})
+    normalized = normalize_table(df)
+    dates = normalized.dataframe["Order Date"]
+    assert pd.api.types.is_datetime64_any_dtype(dates)
+    assert dates.iloc[0] == pd.Timestamp(2026, 1, 1)
+
+
+def test_compact_yyyymmdd_dates_on_date_named_column():
+    df = pd.DataFrame({"Created": [20260105, 20260212, 20260320], "Sales": [1.0, 2.0, 3.0]})
+    normalized = normalize_table(df)
+    dates = normalized.dataframe["Created"]
+    assert pd.api.types.is_datetime64_any_dtype(dates)
+    assert dates.iloc[1] == pd.Timestamp(2026, 2, 12)
+    # A plain numeric column with a non-date name stays numeric.
+    other = normalize_table(pd.DataFrame({"Score": [20260105, 20260212, 20260320]}))
+    assert pd.api.types.is_numeric_dtype(other.dataframe["Score"])
+
+
+def test_iso_codes_suffixes_and_swiss_thousands():
+    df = pd.DataFrame(
+        {
+            "amount": ["1,234.56 USD", "999.00 USD", "2,500.00 USD"],
+            "fees": ["1'234.50 CHF", "2'000.00 CHF", "900.25 CHF"],
+            "pipeline": ["$1.2M", "$800.5k", "$2B"],
+        }
+    )
+    normalized = normalize_table(df)
+    out = normalized.dataframe
+    assert out["amount"].tolist() == pytest.approx([1234.56, 999.0, 2500.0])
+    assert out["fees"].tolist() == pytest.approx([1234.50, 2000.0, 900.25])
+    assert out["pipeline"].tolist() == pytest.approx([1_200_000.0, 800_500.0, 2_000_000_000.0])
+    assert normalized.type_hints.get("amount") == "currency"
+    assert normalized.type_hints.get("pipeline") == "currency"
+
+
+def test_csv_preamble_lines_skipped():
+    # Comma-bearing metadata lines defeat the sniffer's own skip logic, so
+    # the retry path has to find the real header.
+    text = (
+        "Sales Export Report,,\n"
+        "Generated: 2026-07-01,by reporting-suite,\n"
+        "\n"
+        "Date,Region,Revenue\n"
+        "2026-01-05,West,100.00\n"
+        "2026-01-06,East,90.00\n"
+    )
+    table = parse_csv("report.csv", text.encode("utf-8"))
+    assert list(table.dataframe.columns) == ["Date", "Region", "Revenue"]
+    assert len(table.dataframe) == 2
+    assert any(n.finding_type == "banner_rows_skipped" for n in table.notes)
+
+
+def test_ohlc_open_is_not_engagement():
+    from app.services.semantic_mapper import ColumnInput, TableInput, map_dataset
+
+    columns = [
+        ColumnInput("Date", "date", "date", "date", 1.0, []),
+        ColumnInput("Open", "open", "float", "measure", 0.9, []),
+        ColumnInput("High", "high", "float", "measure", 0.9, []),
+        ColumnInput("Low", "low", "float", "measure", 0.9, []),
+        ColumnInput("Close", "close", "float", "measure", 0.9, []),
+    ]
+    mapping = map_dataset([TableInput("prices", columns)], filename="stock_prices.csv", llm=None)
+    assert mapping.column_mappings["Open"].semantic_type == "other"
+    assert mapping.column_mappings["Close"].semantic_type == "other"
 
 
 def test_unpivot_requires_three_periods_and_numeric_bodies():

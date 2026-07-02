@@ -72,10 +72,42 @@ def parse_csv(filename: str, data: bytes) -> RawTable:
                 break
     if dataframe is None or (dataframe.empty and dataframe.columns.empty):
         raise ParseError("We could not detect a table in this file.")
+    dataframe, skipped = _skip_csv_preamble(data, dataframe)
+    if skipped:
+        notes.append(
+            TransformNote(
+                finding_type="banner_rows_skipped",
+                severity="info",
+                message=f"Skipped {skipped} title/metadata line(s) above the CSV header.",
+                meta={"count": skipped},
+            )
+        )
     return RawTable(name=Path(filename).stem, dataframe=dataframe, notes=notes)
 
 
-def _duckdb_csv(data: bytes) -> pd.DataFrame | None:
+def _skip_csv_preamble(data: bytes, parsed: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Report exports often stack title/metadata lines above the real header
+    ("Sales Report,,\\nExported 2026-07-01,,\\n"). The sniffer then reads one
+    wide column or a mangled header. Retry skipping 1-6 lines and keep the
+    parse that yields the most real columns."""
+    best, best_skip = parsed, 0
+
+    def score(frame: pd.DataFrame) -> tuple[int, int]:
+        named = sum(1 for c in frame.columns if not str(c).startswith("column"))
+        return frame.shape[1], named
+
+    if parsed.shape[1] >= 2 and score(parsed)[1] >= parsed.shape[1] * 0.6:
+        return parsed, 0  # already clean
+    for skip in range(1, 7):
+        candidate = _duckdb_csv(data, skiprows=skip)
+        if candidate is None or candidate.empty:
+            continue
+        if score(candidate) > score(best):
+            best, best_skip = candidate, skip
+    return best, best_skip
+
+
+def _duckdb_csv(data: bytes, skiprows: int = 0) -> pd.DataFrame | None:
     # DuckDB's sniffer wants a real file path.
     with tempfile.NamedTemporaryFile(suffix=".csv", delete=True) as handle:
         handle.write(data)
@@ -83,6 +115,8 @@ def _duckdb_csv(data: bytes) -> pd.DataFrame | None:
         connection = None
         try:
             connection = duckdb.connect()
+            if skiprows:
+                return connection.read_csv(handle.name, skiprows=skiprows).df()
             return connection.read_csv(handle.name).df()
         except duckdb.Error:
             return None
@@ -430,13 +464,95 @@ def _table_from_block(block: pd.DataFrame) -> tuple[pd.DataFrame, list[Transform
             )
         data = block.iloc[header_rows[-1] + 1 :]
 
+    # A blank header over the leading label column ("" | Jan | Feb | ...) is
+    # the classic accounting-export shape; "Category" reads better than
+    # "column_1" everywhere downstream.
+    if columns[0] == "column_1":
+        leading = [v for v in data.iloc[:, 0].tolist() if not pd.isna(v)]
+        if leading and all(isinstance(v, str) for v in leading):
+            columns[0] = "Category"
+
     data = data.reset_index(drop=True)
+    if len(data) > 0 and _is_units_row(data.iloc[0]):
+        notes.append(
+            TransformNote(
+                finding_type="units_row_skipped",
+                severity="info",
+                message="Skipped a units row (USD / % / hrs) under the header.",
+            )
+        )
+        data = data.iloc[1:].reset_index(drop=True)
     if len(data.dropna(how="all")) < MIN_TABLE_ROWS:
         return None
     data.columns = columns
+    data = _maybe_transpose(data, notes)
     # The grid read leaves everything as object; give numeric/datetime columns
     # their real dtypes so downstream profiling sees them.
     return data.infer_objects(), notes
+
+
+UNIT_TOKEN = re.compile(
+    r"^\(?\s*(usd|eur|gbp|chf|cad|aud|[$€£%#]|count|units?|qty|hrs?|hours?|days?|"
+    r"weeks?|kg|g|lbs?|pcs|pct|percent|x1000|000s?|in \w+)\s*\)?$",
+    re.IGNORECASE,
+)
+
+
+def _is_units_row(row: pd.Series) -> bool:
+    """A row of unit annotations right under the header ('USD', '%', 'hrs')."""
+    values = [v for v in row.tolist() if not pd.isna(v)]
+    if len(values) < 2 or not all(isinstance(v, str) for v in values):
+        return False
+    matches = sum(1 for v in values if UNIT_TOKEN.match(v))
+    return matches >= max(2, int(len(values) * 0.6))
+
+
+def _maybe_transpose(data: pd.DataFrame, notes: list[TransformNote]) -> pd.DataFrame:
+    """Transposed exports put FIELDS in the first column and each record in a
+    column ('Metric | Store A | Store B | …'). Signature: few rows, wider than
+    tall, first column unique labels, and each ROW is type-homogeneous while
+    columns are mixed. Conservative on purpose."""
+    n_rows, n_cols = data.shape
+    if not (2 <= n_rows <= 8 and n_cols > n_rows and n_cols >= 4):
+        return data
+    labels = data.iloc[:, 0]
+    if labels.isna().any() or not all(isinstance(v, str) for v in labels):
+        return data
+    if labels.nunique() != len(labels):
+        return data
+    body = data.iloc[:, 1:]
+
+    def kind(value):
+        if isinstance(value, bool) or pd.isna(value):
+            return None
+        if isinstance(value, (int, float)):
+            return "num"
+        return "str" if isinstance(value, str) else "other"
+
+    row_kinds = []
+    for _, row in body.iterrows():
+        kinds = {k for k in (kind(v) for v in row.tolist()) if k}
+        row_kinds.append(kinds)
+    rows_homogeneous = all(len(k) <= 1 for k in row_kinds)
+    kinds_across_rows = {next(iter(k)) for k in row_kinds if k}
+    if not rows_homogeneous or len(kinds_across_rows) < 2:
+        return data  # nothing suggests fields-as-rows
+
+    flipped = body.T.reset_index(drop=True)
+    flipped.columns = [str(v).strip() for v in labels]
+    flipped.insert(0, "Record", [str(c) for c in data.columns[1:]])
+    notes.append(
+        TransformNote(
+            finding_type="table_transposed",
+            severity="info",
+            message=(
+                "The table looked transposed (fields as rows, records as "
+                "columns); flipped it so each row is one record."
+            ),
+            meta={"fields": [str(v) for v in labels]},
+        )
+    )
+    return flipped
 
 
 def _is_header_row(row: pd.Series, width: int) -> bool:

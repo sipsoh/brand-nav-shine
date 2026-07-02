@@ -64,11 +64,14 @@ NAME_RULES: list[tuple[str, str, set[str] | None]] = [
     # Per-unit prices/rates precede revenue so 'Unit Price' never becomes the
     # summable primary measure over an actual Revenue column.
     ("other", r"unit_price|price_per|unit_cost|rate_per|per_unit", {"integer", "float", "currency"}),
-    # Includes common non-English money labels (Umsatz/ventas/receita/...).
+    # Includes common non-English money labels (Umsatz/ventas/receita/...)
+    # and bank-statement credits (money in).
     ("revenue", r"revenue|deal_amount|amount|sales|income|arr|mrr|price|value|(^|_)rents?($|_)|donation"
+                r"|(^|_)credits?($|_)|deposit"
                 r"|umsatz|ventas|ingresos|ventes|chiffre|receita|fatturato|omzet",
      {"integer", "float", "currency"}),
     ("cost", r"spend|cost|budget|expense|cac|cpa|discount|salary|payroll|wage"
+             r"|(^|_)debits?($|_)|withdrawal"
              r"|kosten|costes|couts?($|_)|custos|costi",
      {"integer", "float", "currency"}),
     # '(^|_)orders?($|_)' keeps 'reorder_point' from reading as a conversion.
@@ -86,7 +89,7 @@ NAME_RULES: list[tuple[str, str, set[str] | None]] = [
     ("owner", r"owner|rep|salesperson|agent|assignee", None),
     ("segment", r"segment|tier|plan|cohort", None),
     ("comment", r"comment|feedback|note|response|review|message|text", None),
-    ("quantity", r"count|quantity|qty|units|seats", {"integer", "float"}),
+    ("quantity", r"count|quantity|qty|units|seats|volume", {"integer", "float"}),
 ]
 
 
@@ -117,9 +120,22 @@ def _all_columns(tables: list[TableInput]) -> list[ColumnInput]:
     return [column for table in tables for column in table.columns]
 
 
+OHLC = {"open", "high", "low", "close"}
+
+
 def _heuristic_mapping(tables: list[TableInput], filename: str) -> SemanticMapping:
     mappings: dict[str, MappedColumn] = {}
-    for column in _all_columns(tables):
+    all_columns = _all_columns(tables)
+    normalized_names = {c.normalized_name for c in all_columns}
+    # Price candles: 'Open' beside high/low/close is a price, never email-open
+    # engagement.
+    ohlc_context = len(OHLC & normalized_names) >= 3
+    for column in all_columns:
+        if ohlc_context and column.normalized_name in OHLC:
+            mappings[column.name] = MappedColumn(
+                semantic_type="other", role="measure", confidence=0.7
+            )
+            continue
         mapped = _map_column(column)
         if mapped is not None:
             mappings[column.name] = mapped

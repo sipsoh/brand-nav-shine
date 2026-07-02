@@ -43,6 +43,24 @@ Sheets are read as raw cell grids (`header=None`) and reconstructed:
   union is built — that would double-count. Disjoint slices combine; table
   scoring decides what the dashboard is built from.
 
+- **Units rows** ("USD" / "count" / "%") under the header are skipped.
+- **Transposed exports** (fields as rows, records as columns) are detected by
+  row-wise type homogeneity and flipped, conservatively (≤8 fields).
+- **Merged group labels** (a category written once, blank for its group rows)
+  are carried down to every row.
+- **Blank leading label columns** (the accounting-export shape) get the human
+  default name `Category` instead of `column_1`.
+
+## Totals never double-count
+
+- Total/subtotal rows are excluded **anywhere** in the table (financial
+  statements carry "Total Income" mid-table), plus derived "Net Income/Profit/
+  Loss" lines.
+- "Total"/"Grand Total" **columns** beside period columns are dropped before
+  unpivoting a crosstab.
+- The multi-sheet union's overlap guard (below) refuses to combine sheets that
+  share rows.
+
 ## Reshaping
 
 - **Wide period columns unpivot to long form** ("Region | Jan 2026 … Dec
@@ -56,8 +74,14 @@ Sheets are read as raw cell grids (`header=None`) and reconstructed:
 
 - Currency strings (`$1,234.56`), accounting negatives (`($500)`), SAP-style
   trailing minus (`1.234,56-`), unicode minus.
+- ISO currency codes (`1,234.56 USD`, `EUR 999`), Swiss apostrophe thousands
+  (`1'234.56`), and compact magnitude suffixes (`$1.2M`, `3.4k`, `2B`).
+- Numeric date encodings on date-named columns: Excel serials (`46023` →
+  2026-01-01) and compact `YYYYMMDD` integers.
 - European formats: dot/space thousands + comma decimals (`1 234,56`),
-  day-first dates (`13.02.2026`), semicolon CSVs.
+  day-first dates (`13.02.2026`), semicolon CSVs; pipe- and tab-delimited
+  text files; quoted fields with embedded newlines; title/metadata preamble
+  lines above CSV headers.
 - Percent strings stored uniformly as 0–1 fractions ("45%" → 0.45) so percent
   formatting can always multiply by 100.
 - Placeholder null tokens (`N/A`, `-`, `—`, `none`, `#REF!`, …) become real
@@ -71,7 +95,10 @@ Sheets are read as raw cell grids (`header=None`) and reconstructed:
 
 - Non-English money labels map to revenue/cost (Umsatz, ventas, ingresos,
   chiffre, receita, fatturato, omzet; kosten, costes, custos, costi;
-  salary/payroll/wage → cost).
+  salary/payroll/wage → cost). Bank-statement columns: credit/deposit →
+  revenue-side, debit/withdrawal → cost-side.
+- OHLC guard: `Open` beside High/Low/Close is a price, never email-open
+  engagement — and prices are never summed into a headline.
 - Any column whose values carry a currency symbol is a **money measure** even
   with an unrecognized name — semantic `money` is neutral: it counts as a
   strong measure but never implies "sales" for use-case detection.

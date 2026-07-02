@@ -141,6 +141,99 @@ EXPECTATIONS = {
         "required_kpi_tokens": ["total revenue"],
         "chart_aggregations_forbidden": [("Discount", "sum")],
     },
+    "financial_pl_statement.xlsx": {
+        # QuickBooks-style P&L: banner block, month columns + Total column,
+        # mid-table Total Income/Expenses rows, Net Income line. None of the
+        # derived lines may double-count.
+        "use_case": None,
+        "primary_sheet": "Profit and Loss",
+        "required_kpi_tokens": ["total value"],
+        "chart_aggregations_forbidden": [],
+    },
+    "pivot_with_totals.xlsx": {
+        # Crosstab with a Grand Total column AND a Total row.
+        "use_case": None,
+        "primary_sheet": "Revenue by Region",
+        "required_kpi_tokens": ["total revenue"],
+        "chart_aggregations_forbidden": [],
+    },
+    "grouped_merged_labels.xlsx": {
+        # Vertically merged category labels (NaN runs under each group name).
+        "use_case": None,
+        "primary_sheet": "Category Sales",
+        "required_kpi_tokens": ["total amount"],
+        "chart_aggregations_forbidden": [],
+    },
+    "units_row_report.xlsx": {
+        # A units row (USD / count / %) sits under the header.
+        "use_case": None,
+        "primary_sheet": "Monthly",
+        "required_kpi_tokens": ["total revenue"],
+        "chart_aggregations_forbidden": [("Refund Rate", "sum")],
+    },
+    "transposed_metrics.xlsx": {
+        # Fields as rows, stores as columns: flipped to records.
+        "use_case": None,
+        "primary_sheet": "Store Metrics",
+        "required_kpi_tokens": ["total revenue"],
+        "chart_aggregations_forbidden": [],
+    },
+    "serial_dates.xlsx": {
+        # Order dates as raw Excel serial numbers.
+        "use_case": None,
+        "primary_sheet": "Orders",
+        "required_kpi_tokens": ["total amount", "mom change"],
+        "chart_aggregations_forbidden": [],
+    },
+    "compact_dates.csv": {
+        # Dates as YYYYMMDD integers.
+        "use_case": None,
+        "primary_sheet": "compact_dates",
+        "required_kpi_tokens": ["total sales", "mom change"],
+        "chart_aggregations_forbidden": [],
+    },
+    "currency_codes.csv": {
+        # "1,234.56 USD", Swiss "1'234.56 CHF", and "$1.2M" suffixes.
+        "use_case": None,
+        "primary_sheet": "currency_codes",
+        "required_kpi_tokens": ["total amount"],
+        "chart_aggregations_forbidden": [],
+    },
+    "bank_statement.csv": {
+        # Debit/Credit split columns; credits are money in.
+        "use_case": None,
+        "primary_sheet": "bank_statement",
+        "required_kpi_tokens": ["total credit"],
+        "chart_aggregations_forbidden": [],
+    },
+    "pipe_export.txt": {
+        # Pipe-delimited .txt.
+        "use_case": None,
+        "primary_sheet": "pipe_export",
+        "required_kpi_tokens": ["total revenue"],
+        "chart_aggregations_forbidden": [],
+    },
+    "csv_with_preamble.csv": {
+        # Title/metadata lines above the real CSV header.
+        "use_case": None,
+        "primary_sheet": "csv_with_preamble",
+        "required_kpi_tokens": ["total revenue"],
+        "chart_aggregations_forbidden": [],
+    },
+    "quoted_newlines.csv": {
+        # Quoted fields with embedded newlines and commas.
+        "use_case": None,
+        "primary_sheet": "quoted_newlines",
+        "required_kpi_tokens": ["total revenue"],
+        "chart_aggregations_forbidden": [],
+    },
+    "stock_prices.csv": {
+        # OHLC candles: 'Open' is a price, not engagement; prices never sum.
+        "use_case": None,
+        "primary_sheet": "stock_prices",
+        "required_kpi_tokens": ["total volume"],
+        "chart_aggregations_forbidden": [("Open", "sum"), ("Close", "sum")],
+    },
 }
 
 
