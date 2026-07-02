@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 const navItems = [
   { href: "/app", label: "Home" },
@@ -10,22 +13,31 @@ const navItems = [
 export default function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const pathname = usePathname();
   return (
-    <div className="mx-auto flex max-w-6xl gap-8 px-6">
-      <aside className="w-44 shrink-0 border-r border-neutral-200 py-8 pr-4">
-        <nav className="flex flex-col gap-1 text-sm">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rounded-md px-3 py-2 text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
-            >
-              {item.label}
-            </Link>
-          ))}
+    <div>
+      <div className="border-b border-neutral-200 bg-white/85 backdrop-blur">
+        <nav className="mx-auto flex max-w-7xl gap-1 px-6 py-2">
+          {navItems.map((item) => {
+            const active =
+              item.href === "/app" ? pathname === "/app" : pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                  active
+                    ? "bg-indigo-50 font-semibold text-indigo-600"
+                    : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+                }`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
-      </aside>
-      <div className="min-w-0 flex-1">{children}</div>
+      </div>
+      <div className="mx-auto max-w-7xl px-6">{children}</div>
     </div>
   );
 }

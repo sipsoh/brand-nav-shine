@@ -46,6 +46,46 @@ EXPECTATIONS = {
         # Ratings must never be summed into charts.
         "chart_aggregations_forbidden": [("Performance Score", "sum")],
     },
+    "website_analytics.xlsx": {
+        "use_case": None,
+        "primary_sheet": "Daily",
+        # Conversions outrank sessions as the headline — the right executive call.
+        "required_kpi_tokens": ["total conversions"],
+        # A percent-rate column must never be summed.
+        "chart_aggregations_forbidden": [("Bounce Rate", "sum")],
+    },
+    "nonprofit_donations.xlsx": {
+        "use_case": None,
+        "primary_sheet": "Donations",
+        "required_kpi_tokens": ["total amount"],
+        "chart_aggregations_forbidden": [],
+    },
+    "inventory_snapshot.xlsx": {
+        "use_case": None,
+        "primary_sheet": "Stock",
+        "required_kpi_tokens": ["total on hand qty"],
+        "chart_aggregations_forbidden": [("Unit Cost", "sum")],
+    },
+    "real_estate_portfolio.xlsx": {
+        "use_case": None,
+        "primary_sheet": "Portfolio",
+        "required_kpi_tokens": ["total monthly rent"],
+        "chart_aggregations_forbidden": [("Occupancy Rate", "sum"), ("Year Built", "sum")],
+    },
+    "restaurant_pos.xlsx": {
+        "use_case": None,
+        "primary_sheet": "Daily Sales",
+        "required_kpi_tokens": ["total gross sales"],
+        "chart_aggregations_forbidden": [],
+    },
+    "pivot_wide_report.xlsx": {
+        # Wrong-shape data: the bar is graceful handling — parse, valid spec,
+        # honest row count. No use-case or KPI demands.
+        "use_case": None,
+        "primary_sheet": "Revenue by Region",
+        "required_kpi_tokens": ["rows analyzed"],
+        "chart_aggregations_forbidden": [],
+    },
 }
 
 

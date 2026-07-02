@@ -1,7 +1,8 @@
 """Render a DashboardSpec to a standalone HTML file (ECharts via CDN).
 
-Used by the eval harness to produce shareable previews of generated
-dashboards without running the web app:
+Executive-style layout: dark hero band with title + KPI row, a 12-column chart
+grid driven by widget `size`, and insights / assumptions / next actions in
+overlay panels so they never consume dashboard real estate.
 
     python -m evals.render_spec_html <output_dir>
 """
@@ -18,191 +19,331 @@ PAGE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__ — Picxify</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  :root { color-scheme: light; }
+  :root {
+    --bg: #f4f5fa; --card: #ffffff; --line: #e9eaf2; --ink: #0f1222;
+    --muted: #6b7089; --faint: #9ca0b5; --accent: #6366f1; --accent2: #8b5cf6;
+    --hero1: #14162e; --hero2: #1e1b4b;
+    --radius: 18px; --shadow: 0 1px 2px rgba(16,17,38,.04), 0 8px 24px rgba(16,17,38,.06);
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: #fafafa; color: #171717;
-         font: 15px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 80px; }
-  h1 { font-size: 30px; margin: 0; letter-spacing: -0.02em; }
-  .sub { color: #525252; margin-top: 6px; }
-  .chips { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
-  .chip { background: #eef2ff; color: #4338ca; border-radius: 999px;
-          padding: 3px 12px; font-size: 12px; font-weight: 600; }
-  .chip.gray { background: #f5f5f5; color: #525252; }
-  .trust { color: #a3a3a3; font-size: 12px; margin-top: 12px; }
-  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
-       color: #737373; margin: 40px 0 12px; }
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
-  .card { background: #fff; border: 1px solid #e5e5e5; border-radius: 14px; padding: 18px 20px; }
-  .kpi-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #737373; }
-  .kpi-value { font-size: 26px; font-weight: 700; margin-top: 4px; }
-  .kpi-change { font-size: 12px; color: #a3a3a3; }
-  .up { color: #16a34a; } .down { color: #dc2626; }
-  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
-  .chart-title { font-weight: 600; font-size: 14px; margin-bottom: 8px; }
-  .chart-box { height: 320px; }
-  .insight { border-radius: 12px; border: 1px solid #e5e5e5; background: #fff;
-             padding: 14px 18px; margin-bottom: 10px; }
-  .insight.positive { border-color: #bbf7d0; background: #f0fdf4; }
-  .insight.negative { border-color: #fecaca; background: #fef2f2; }
-  .insight.warning { border-color: #fde68a; background: #fffbeb; }
-  .insight b { display: block; margin-bottom: 2px; }
-  .insight p { margin: 0; color: #525252; font-size: 14px; }
-  details { margin-top: 8px; }
-  summary { cursor: pointer; font-size: 12px; color: #a3a3a3; }
-  .trace { font-size: 12px; color: #525252; background: #fafafa; border-radius: 8px;
-           padding: 10px 12px; margin-top: 6px; }
-  .exec { white-space: pre-wrap; }
-  .action { display: flex; gap: 10px; align-items: baseline; background: #fff;
-            border: 1px solid #e5e5e5; border-radius: 12px; padding: 12px 16px; margin-bottom: 8px; }
-  .prio { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 10px; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: Inter, -apple-system, "Segoe UI", sans-serif; font-size: 14px; }
+
+  /* Top bar */
+  .topbar { background: rgba(255,255,255,.85); backdrop-filter: blur(8px);
+            border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+  .topbar-in { max-width: 1240px; margin: 0 auto; padding: 12px 28px;
+               display: flex; align-items: center; gap: 22px; }
+  .logo { font-weight: 800; letter-spacing: -.02em; font-size: 16px;
+          background: linear-gradient(90deg, var(--accent), var(--accent2));
+          -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .topnav { display: flex; gap: 4px; }
+  .topnav span { padding: 6px 14px; border-radius: 999px; color: var(--muted);
+                 font-weight: 500; font-size: 13px; }
+  .topnav span.active { background: #eef0ff; color: var(--accent); font-weight: 600; }
+  .topbar .spacer { flex: 1; }
+  .pillbtn { border: 1px solid var(--line); background: var(--card); border-radius: 999px;
+             padding: 7px 16px; font: inherit; font-size: 13px; font-weight: 600;
+             color: var(--ink); cursor: pointer; }
+  .pillbtn:hover { border-color: #c9cce0; }
+  .pillbtn .n { display: inline-block; min-width: 18px; text-align: center; margin-left: 6px;
+                background: #eef0ff; color: var(--accent); border-radius: 999px;
+                font-size: 11px; padding: 1px 5px; }
+
+  /* Hero */
+  .hero { background: radial-gradient(1200px 500px at 85% -10%, #3730a3 0%, transparent 60%),
+                       linear-gradient(135deg, var(--hero1), var(--hero2));
+          color: #fff; padding: 40px 0 84px; }
+  .hero-in { max-width: 1240px; margin: 0 auto; padding: 0 28px; }
+  .crumbs { font-size: 12px; color: #a5b4fc; font-weight: 600;
+            text-transform: uppercase; letter-spacing: .12em; }
+  h1 { font-size: 34px; font-weight: 800; letter-spacing: -.03em; margin: 10px 0 6px; }
+  .sub { color: #c7d2fe; max-width: 720px; }
+  .meta { margin-top: 14px; display: flex; gap: 14px; flex-wrap: wrap;
+          color: #a5b4fc; font-size: 12.5px; }
+  .meta b { color: #e0e7ff; font-weight: 600; }
+
+  .sheet { max-width: 1240px; margin: -56px auto 0; padding: 0 28px 90px; }
+
+  /* KPI row */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 16px; }
+  .kpi { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+         box-shadow: var(--shadow); padding: 20px 22px; position: relative; overflow: hidden; }
+  .kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px;
+                 background: linear-gradient(180deg, var(--accent), var(--accent2)); }
+  .kpi-label { font-size: 11px; font-weight: 700; letter-spacing: .09em;
+               text-transform: uppercase; color: var(--faint); }
+  .kpi-value { font-size: 30px; font-weight: 800; letter-spacing: -.02em; margin-top: 8px; }
+  .kpi-change { font-size: 12px; color: var(--faint); margin-top: 2px; }
+  .up { color: #10b981; } .down { color: #ef4444; }
+  .src { position: absolute; top: 14px; right: 14px; border: 0; background: transparent;
+         color: #c3c6d9; cursor: pointer; font-size: 14px; padding: 2px; }
+  .src:hover { color: var(--accent); }
+
+  /* Exec summary strip */
+  .exec { margin-top: 16px; background: linear-gradient(90deg, #eef0ff, #f6f2ff);
+          border: 1px solid #e3e5fb; border-radius: var(--radius); padding: 16px 22px;
+          display: flex; gap: 14px; align-items: baseline; }
+  .exec .tag { font-size: 11px; font-weight: 800; letter-spacing: .1em; color: var(--accent);
+               text-transform: uppercase; white-space: nowrap; }
+  .exec .lines { color: #43465e; font-size: 13.5px; }
+
+  /* Chart grid */
+  .grid { margin-top: 16px; display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+           box-shadow: var(--shadow); padding: 20px 22px; position: relative; }
+  .span-12 { grid-column: span 12; } .span-8 { grid-column: span 8; }
+  .span-6 { grid-column: span 6; } .span-4 { grid-column: span 4; }
+  @media (max-width: 900px) { .grid > * { grid-column: span 12 !important; } }
+  .panel-title { font-weight: 700; font-size: 14.5px; letter-spacing: -.01em; padding-right: 30px; }
+  .chart-box { height: 300px; margin-top: 10px; }
+  .span-12 .chart-box { height: 340px; }
+
+  /* Overlay */
+  .overlay { position: fixed; inset: 0; background: rgba(15,18,34,.45);
+             backdrop-filter: blur(3px); display: none; z-index: 50; }
+  .overlay.open { display: flex; align-items: flex-start; justify-content: center; }
+  .sheet-modal { background: var(--card); border-radius: 20px; box-shadow: var(--shadow);
+                 width: min(680px, calc(100vw - 32px)); max-height: 82vh; overflow: auto;
+                 margin-top: 8vh; padding: 26px 30px; }
+  .sheet-modal h3 { margin: 0 0 4px; font-size: 19px; letter-spacing: -.02em; }
+  .sheet-modal .hint { color: var(--faint); font-size: 12.5px; margin-bottom: 16px; }
+  .close { float: right; border: 0; background: #f1f2f8; border-radius: 999px;
+           width: 30px; height: 30px; cursor: pointer; font-size: 14px; color: var(--muted); }
+  .insight { border: 1px solid var(--line); border-left-width: 4px; border-radius: 12px;
+             padding: 13px 16px; margin-bottom: 10px; }
+  .insight.positive { border-left-color: #10b981; } .insight.negative { border-left-color: #ef4444; }
+  .insight.warning { border-left-color: #f59e0b; } .insight.neutral { border-left-color: #a5b4fc; }
+  .insight b { display: block; font-size: 13.5px; }
+  .insight p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+  details { margin-top: 6px; } summary { cursor: pointer; font-size: 11.5px; color: var(--faint); }
+  .trace { font-size: 12px; color: var(--muted); background: #f7f8fc; border-radius: 8px;
+           padding: 9px 12px; margin-top: 6px; }
+  .action { display: flex; gap: 10px; align-items: baseline; border: 1px solid var(--line);
+            border-radius: 12px; padding: 11px 14px; margin-bottom: 8px; }
+  .prio { font-size: 10.5px; font-weight: 800; border-radius: 999px; padding: 2px 9px;
+          text-transform: uppercase; letter-spacing: .06em; }
   .prio.high { background: #fef2f2; color: #b91c1c; }
   .prio.medium { background: #fffbeb; color: #b45309; }
-  .prio.low { background: #f5f5f5; color: #525252; }
-  ul.plain { margin: 6px 0 0; padding-left: 18px; color: #525252; font-size: 14px; }
-  footer { margin-top: 56px; color: #a3a3a3; font-size: 12px; }
+  .prio.low { background: #f1f2f8; color: var(--muted); }
+  ul.plain { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+  ul.plain li { margin-bottom: 6px; }
+  footer { text-align: center; color: var(--faint); font-size: 12px; margin-top: 48px; }
 </style>
 </head>
 <body>
-<div class="wrap" id="app"></div>
+<div class="topbar"><div class="topbar-in">
+  <span class="logo">Picxify</span>
+  <nav class="topnav">
+    <span>Home</span><span>Upload</span><span class="active">Dashboards</span><span>Settings</span>
+  </nav>
+  <span class="spacer"></span>
+  <button class="pillbtn" data-open="insights">Insights<span class="n" id="n-insights"></span></button>
+  <button class="pillbtn" data-open="actions">Next actions<span class="n" id="n-actions"></span></button>
+  <button class="pillbtn" data-open="sources">Sources &amp; assumptions</button>
+</div></div>
+
+<div class="hero"><div class="hero-in" id="hero"></div></div>
+<div class="sheet" id="sheet"></div>
+
+<div class="overlay" id="ov-insights"><div class="sheet-modal">
+  <button class="close" data-close>✕</button><h3>Insights</h3>
+  <div class="hint">Every number below was computed by deterministic code.</div>
+  <div id="insights-body"></div>
+</div></div>
+<div class="overlay" id="ov-actions"><div class="sheet-modal">
+  <button class="close" data-close>✕</button><h3>Recommended next actions</h3>
+  <div class="hint">Derived from the computed insights.</div>
+  <div id="actions-body"></div>
+</div></div>
+<div class="overlay" id="ov-sources"><div class="sheet-modal">
+  <button class="close" data-close>✕</button><h3>Sources &amp; assumptions</h3>
+  <div class="hint">What this dashboard was built from, and what Picxify inferred.</div>
+  <div id="sources-body"></div>
+</div></div>
+<div class="overlay" id="ov-trace"><div class="sheet-modal">
+  <button class="close" data-close>✕</button><h3>How this was calculated</h3>
+  <div class="hint" id="trace-title"></div>
+  <div class="trace" id="trace-body"></div>
+</div></div>
+
 <script id="spec" type="application/json">__SPEC__</script>
 <script>
 const spec = JSON.parse(document.getElementById('spec').textContent);
-const app = document.getElementById('app');
 const el = (tag, cls, text) => {
   const node = document.createElement(tag);
   if (cls) node.className = cls;
   if (text !== undefined) node.textContent = text;
   return node;
 };
-const traceBlock = (trace) => {
-  if (!trace) return document.createDocumentFragment();
-  const details = el('details');
-  details.appendChild(el('summary', null, 'View source'));
-  const box = el('div', 'trace');
-  box.textContent = 'Calculation: ' + trace.calculation +
-    ' · Columns: ' + trace.columns.join(', ') +
-    (trace.filters && trace.filters.length ? ' · Filters: ' + trace.filters.join('; ') : '') +
-    ' · Rows: ' + trace.rowCount.toLocaleString() +
-    ' · By: ' + (trace.generatedBy === 'code' ? 'deterministic code' : trace.generatedBy);
-  details.appendChild(box);
-  return details;
+const fmtTrace = (trace) =>
+  'Calculation: ' + trace.calculation +
+  '\\nColumns: ' + trace.columns.join(', ') +
+  (trace.filters && trace.filters.length ? '\\nFilters: ' + trace.filters.join('; ') : '') +
+  '\\nRows included: ' + trace.rowCount.toLocaleString() +
+  '\\nGenerated by: ' + (trace.generatedBy === 'code' ? 'deterministic code' : trace.generatedBy);
+const srcButton = (title, trace) => {
+  const button = el('button', 'src', '⌕');
+  button.title = 'View source';
+  button.onclick = () => {
+    document.getElementById('trace-title').textContent = title;
+    const body = document.getElementById('trace-body');
+    body.textContent = fmtTrace(trace);
+    body.style.whiteSpace = 'pre-wrap';
+    document.getElementById('ov-trace').classList.add('open');
+  };
+  return button;
 };
 
-// Header
-app.appendChild(el('h1', null, spec.dashboard.title));
-app.appendChild(el('div', 'sub', spec.dashboard.subtitle));
-const chips = el('div', 'chips');
-chips.appendChild(el('span', 'chip', spec.dashboard.useCase.replace(/_/g, ' ')));
-chips.appendChild(el('span', 'chip gray', 'for ' + spec.dashboard.audience));
-app.appendChild(chips);
-const rows = spec.dataSources.reduce((s, d) => s + d.rowCount, 0);
-app.appendChild(el('div', 'trust',
-  'Trust bar: ' + rows.toLocaleString() + ' rows analyzed · ' +
-  spec.assumptions.length + ' assumption(s) · every widget carries a source trace'));
+// ---- hero ----
+const hero = document.getElementById('hero');
+hero.appendChild(el('div', 'crumbs',
+  spec.dashboard.useCase.replace(/_/g, ' ') + ' · for ' + spec.dashboard.audience));
+hero.appendChild(el('h1', null, spec.dashboard.title));
+hero.appendChild(el('div', 'sub', spec.dashboard.subtitle));
+const rows = spec.dataSources.reduce((sum, source) => sum + source.rowCount, 0);
+const meta = el('div', 'meta');
+const addMeta = (label, value) => {
+  const item = el('span');
+  item.appendChild(el('b', null, value));
+  item.appendChild(document.createTextNode(' ' + label));
+  meta.appendChild(item);
+};
+addMeta('rows analyzed', rows.toLocaleString());
+addMeta('assumptions', String(spec.assumptions.length));
+addMeta('· every widget source-traced', '');
+hero.appendChild(meta);
 
-let chartIndex = 0;
-const pendingCharts = [];
+// ---- collect widgets ----
+const kpis = [], charts = [], insightsInline = [];
+let execText = null;
 for (const section of spec.sections) {
-  app.appendChild(el('h2', null, section.title));
-  const kpis = section.widgets.filter(w => w.type === 'kpi');
-  const charts = section.widgets.filter(w => w.type === 'chart');
-  const others = section.widgets.filter(w => !['kpi', 'chart'].includes(w.type));
-
-  for (const widget of others) {
-    if (widget.type === 'text') {
-      const card = el('div', 'card');
-      card.appendChild(el('div', 'chart-title', widget.title));
-      card.appendChild(el('div', 'exec', (widget.markdown || '').replace(/^- /gm, '• ')));
-      app.appendChild(card);
-    } else if (widget.type === 'insight_card' && widget.insight) {
-      const insight = widget.insight;
-      const card = el('div', 'insight ' + insight.severity);
-      card.appendChild(el('b', null, insight.headline));
-      card.appendChild(el('p', null, insight.detail));
-      card.appendChild(traceBlock(insight.sourceTrace));
-      app.appendChild(card);
-    } else if (widget.type === 'assumption_panel' && spec.assumptions.length) {
-      const card = el('div', 'card');
-      card.appendChild(el('div', 'chart-title', 'Assumptions'));
-      const list = el('ul', 'plain');
-      for (const assumption of spec.assumptions) {
-        list.appendChild(el('li', null,
-          assumption.label + ' (' + assumption.status.replace('_', ' ') + ')'));
-      }
-      card.appendChild(list);
-      app.appendChild(card);
-    } else if (widget.type === 'source_panel') {
-      const card = el('div', 'card');
-      card.appendChild(el('div', 'chart-title', 'Data sources'));
-      const list = el('ul', 'plain');
-      for (const source of spec.dataSources) {
-        list.appendChild(el('li', null, source.displayName + ' — ' +
-          source.rowCount.toLocaleString() + ' rows, ' + source.columnCount + ' columns'));
-      }
-      card.appendChild(list);
-      app.appendChild(card);
-    }
-  }
-
-  if (kpis.length) {
-    const grid = el('div', 'kpis');
-    for (const widget of kpis) {
-      const kpi = widget.kpi;
-      const card = el('div', 'card');
-      card.appendChild(el('div', 'kpi-label', kpi.label));
-      const value = el('div', 'kpi-value',
-        typeof kpi.value === 'number' ? kpi.value.toLocaleString() : String(kpi.value));
-      if (kpi.direction === 'up') value.appendChild(el('span', 'up', ' ▲'));
-      if (kpi.direction === 'down') value.appendChild(el('span', 'down', ' ▼'));
-      card.appendChild(value);
-      if (kpi.changeLabel) card.appendChild(el('div', 'kpi-change', kpi.changeLabel));
-      card.appendChild(traceBlock(kpi.sourceTrace));
-      grid.appendChild(card);
-    }
-    app.appendChild(grid);
-  }
-
-  if (charts.length) {
-    const grid = el('div', 'charts');
-    for (const widget of charts) {
-      const card = el('div', 'card');
-      card.appendChild(el('div', 'chart-title', widget.title));
-      const box = el('div', 'chart-box');
-      box.id = 'chart-' + chartIndex++;
-      card.appendChild(box);
-      card.appendChild(traceBlock(widget.chart.sourceTrace));
-      grid.appendChild(card);
-      pendingCharts.push([box.id, widget.chart.echartsOption]);
-    }
-    app.appendChild(grid);
+  for (const widget of section.widgets) {
+    if (widget.type === 'kpi') kpis.push(widget);
+    else if (widget.type === 'chart') charts.push(widget);
+    else if (widget.type === 'text' && !execText) execText = widget;
+    else if (widget.type === 'insight_card' && widget.insight) insightsInline.push(widget.insight);
   }
 }
+const allInsights = spec.insights.length ? spec.insights : insightsInline;
 
-if (spec.actions.length) {
-  app.appendChild(el('h2', null, 'Recommended next actions'));
-  for (const action of spec.actions) {
-    const row = el('div', 'action');
-    row.appendChild(el('span', 'prio ' + action.priority, action.priority));
-    const body = el('span');
-    body.appendChild(el('b', null, action.label + ' '));
-    body.appendChild(el('span', null, action.rationale));
-    row.appendChild(body);
-    app.appendChild(row);
-  }
+// ---- KPI row ----
+const sheet = document.getElementById('sheet');
+const kpiGrid = el('div', 'kpis');
+for (const widget of kpis) {
+  const kpi = widget.kpi;
+  const card = el('div', 'kpi');
+  if (kpi.sourceTrace) card.appendChild(srcButton(kpi.label, kpi.sourceTrace));
+  card.appendChild(el('div', 'kpi-label', kpi.label));
+  const value = el('div', 'kpi-value',
+    typeof kpi.value === 'number' ? kpi.value.toLocaleString() : String(kpi.value));
+  if (kpi.direction === 'up') value.appendChild(el('span', 'up', ' ▲'));
+  if (kpi.direction === 'down') value.appendChild(el('span', 'down', ' ▼'));
+  card.appendChild(value);
+  if (kpi.changeLabel) card.appendChild(el('div', 'kpi-change', kpi.changeLabel));
+  kpiGrid.appendChild(card);
 }
-app.appendChild(el('footer', null,
-  'Generated by Picxify · ' + spec.dashboard.generatedAt +
-  ' · every number computed by deterministic code'));
+sheet.appendChild(kpiGrid);
 
-for (const [id, option] of pendingCharts) {
+// ---- exec summary strip ----
+if (execText && execText.markdown) {
+  const strip = el('div', 'exec');
+  strip.appendChild(el('span', 'tag', 'Summary'));
+  strip.appendChild(el('span', 'lines',
+    execText.markdown.replace(/^- /gm, '').split('\\n').join('  ·  ')));
+  sheet.appendChild(strip);
+}
+
+// ---- chart grid ----
+const SPANS = { xl: 'span-12', lg: 'span-8', md: 'span-6', sm: 'span-4', full: 'span-12' };
+const grid = el('div', 'grid');
+const pending = [];
+charts.forEach((widget, index) => {
+  const panel = el('div', 'panel ' + (SPANS[widget.size] || 'span-6'));
+  if (widget.chart.sourceTrace) panel.appendChild(srcButton(widget.title, widget.chart.sourceTrace));
+  panel.appendChild(el('div', 'panel-title', widget.title));
+  const box = el('div', 'chart-box');
+  box.id = 'chart-' + index;
+  panel.appendChild(box);
+  grid.appendChild(panel);
+  pending.push([box.id, widget.chart.echartsOption]);
+});
+sheet.appendChild(grid);
+sheet.appendChild(el('footer', null,
+  'Generated by Picxify · ' + spec.dashboard.generatedAt + ' · code calculates, AI narrates'));
+
+// ---- overlays ----
+document.getElementById('n-insights').textContent = allInsights.length;
+document.getElementById('n-actions').textContent = spec.actions.length;
+const insightsBody = document.getElementById('insights-body');
+for (const insight of allInsights) {
+  const card = el('div', 'insight ' + insight.severity);
+  card.appendChild(el('b', null, insight.headline));
+  card.appendChild(el('p', null, insight.detail));
+  const details = el('details');
+  details.appendChild(el('summary', null, 'View source'));
+  const trace = el('div', 'trace', fmtTrace(insight.sourceTrace));
+  trace.style.whiteSpace = 'pre-wrap';
+  details.appendChild(trace);
+  card.appendChild(details);
+  insightsBody.appendChild(card);
+}
+const actionsBody = document.getElementById('actions-body');
+for (const action of spec.actions) {
+  const row = el('div', 'action');
+  row.appendChild(el('span', 'prio ' + action.priority, action.priority));
+  const body = el('span');
+  body.appendChild(el('b', null, action.label + '  '));
+  body.appendChild(el('span', null, action.rationale));
+  row.appendChild(body);
+  actionsBody.appendChild(row);
+}
+const sourcesBody = document.getElementById('sources-body');
+sourcesBody.appendChild(el('h3', null, ''));
+const sourceList = el('ul', 'plain');
+for (const source of spec.dataSources) {
+  sourceList.appendChild(el('li', null, source.displayName + ' — ' +
+    source.rowCount.toLocaleString() + ' rows, ' + source.columnCount + ' columns'));
+}
+sourcesBody.appendChild(sourceList);
+if (spec.assumptions.length) {
+  const assumptionList = el('ul', 'plain');
+  assumptionList.style.marginTop = '14px';
+  for (const assumption of spec.assumptions) {
+    assumptionList.appendChild(el('li', null,
+      assumption.label + ' (' + assumption.status.replace('_', ' ') + ')'));
+  }
+  sourcesBody.appendChild(assumptionList);
+}
+
+for (const button of document.querySelectorAll('[data-open]')) {
+  button.onclick = () =>
+    document.getElementById('ov-' + button.dataset.open).classList.add('open');
+}
+for (const overlay of document.querySelectorAll('.overlay')) {
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay || event.target.hasAttribute('data-close')) {
+      overlay.classList.remove('open');
+    }
+  });
+}
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    for (const overlay of document.querySelectorAll('.overlay')) overlay.classList.remove('open');
+  }
+});
+
+// ---- charts ----
+for (const [id, option] of pending) {
   if (option && Object.keys(option).length) {
     echarts.init(document.getElementById(id)).setOption(option);
   }
 }
 window.addEventListener('resize', () => {
-  for (const [id] of pendingCharts) {
+  for (const [id] of pending) {
     const chart = echarts.getInstanceByDom(document.getElementById(id));
     if (chart) chart.resize();
   }

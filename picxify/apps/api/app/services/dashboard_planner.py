@@ -137,14 +137,19 @@ def _count_column(ctx: PlanningContext) -> str:
     return id_column.name if id_column else ctx.columns[0].name
 
 
-def _primary_dimension(ctx: PlanningContext) -> ColumnCtx | None:
-    priority = ["campaign", "channel", "stage", "status", "segment", "region", "owner"]
+def _ranked_dimensions(ctx: PlanningContext) -> list[ColumnCtx]:
+    priority = ["campaign", "channel", "segment", "region", "stage", "status", "owner"]
     dimensions = [c for c in _columns_by_role(ctx, "dimension") if c.semantic_type != "id"]
     dimensions.sort(
         key=lambda c: priority.index(c.semantic_type)
         if c.semantic_type in priority
         else len(priority)
     )
+    return dimensions
+
+
+def _primary_dimension(ctx: PlanningContext) -> ColumnCtx | None:
+    dimensions = _ranked_dimensions(ctx)
     return dimensions[0] if dimensions else None
 
 
@@ -280,7 +285,9 @@ def _charts_section(ctx: PlanningContext) -> dict | None:
     measure = _primary_measure(ctx)
     average = _average_measure(ctx)
     dates = _columns_by_role(ctx, "date")
-    dimension = _primary_dimension(ctx)
+    dimensions = _ranked_dimensions(ctx)
+    dimension = dimensions[0] if dimensions else None
+    secondary = dimensions[1] if len(dimensions) > 1 else None
     stage = next((c for c in ctx.columns if c.semantic_type in {"stage", "status"}), None)
 
     # Without a strong measure, count records instead of summing arbitrary numbers.
@@ -307,6 +314,7 @@ def _charts_section(ctx: PlanningContext) -> dict | None:
                     "dateGrain": ctx.date_grain,
                     "filters": [],
                 },
+                size="xl",
             )
         )
 
@@ -323,6 +331,43 @@ def _charts_section(ctx: PlanningContext) -> dict | None:
                     "filters": [],
                     "limit": 8,
                 },
+                size="md",
+            )
+        )
+
+    if dimension and dates and ctx.date_grain:
+        widgets.append(
+            _chart_widget(
+                "w_chart_mix",
+                f"{metric_label} over time by {dimension.name}",
+                "stacked_bar",
+                {
+                    "tableId": ctx.table_id,
+                    "measures": metric_measures,
+                    "dimensions": [dimension.name],
+                    "dateColumn": dates[0].name,
+                    "dateGrain": ctx.date_grain,
+                    "filters": [],
+                    "limit": 500,
+                },
+                size="lg",
+            )
+        )
+
+    if secondary is not None and secondary is not stage:
+        widgets.append(
+            _chart_widget(
+                "w_chart_secondary",
+                f"{metric_label} by {secondary.name}",
+                "horizontal_bar",
+                {
+                    "tableId": ctx.table_id,
+                    "measures": metric_measures,
+                    "dimensions": [secondary.name],
+                    "filters": [],
+                    "limit": 8,
+                },
+                size="md",
             )
         )
 
@@ -345,6 +390,7 @@ def _charts_section(ctx: PlanningContext) -> dict | None:
                     "filters": [],
                     "limit": 8,
                 },
+                size="md",
             )
         )
 
@@ -361,6 +407,7 @@ def _charts_section(ctx: PlanningContext) -> dict | None:
                     "filters": [],
                     "limit": 8,
                 },
+                size="md",
             )
         )
 
@@ -369,11 +416,14 @@ def _charts_section(ctx: PlanningContext) -> dict | None:
     return {"id": "sec_charts", "title": "Performance", "layout": "grid", "widgets": widgets}
 
 
-def _chart_widget(widget_id: str, title: str, chart_type: str, query_spec: dict) -> dict:
+def _chart_widget(
+    widget_id: str, title: str, chart_type: str, query_spec: dict, size: str = "md"
+) -> dict:
     return {
         "id": widget_id,
         "type": "chart",
         "title": title[:100],
+        "size": size,
         "chart": {
             "chartType": chart_type,
             "querySpec": query_spec,

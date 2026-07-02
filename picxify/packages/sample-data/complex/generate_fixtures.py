@@ -194,9 +194,135 @@ def hr_roster() -> None:
         df[df["Status"] == "Terminated"].to_excel(writer, sheet_name="Terminations", index=False)
 
 
+def website_analytics() -> None:
+    """Marketing-ops data: engagement counts plus percent-string rates."""
+    channels = ["Organic", "Paid Search", "Social", "Email", "Referral", "Direct"]
+    start = date(2026, 1, 1)
+    rows = []
+    for day_offset in range(160):
+        for channel in channels:
+            sessions = random.randrange(180, 2200)
+            rows.append(
+                {
+                    "Date": start + timedelta(days=day_offset),
+                    "Channel": channel,
+                    "Sessions": sessions,
+                    "Pageviews": int(sessions * (1.6 + random.random() * 1.8)),
+                    "Bounce Rate": f"{random.uniform(28, 71):.1f}%",
+                    "Conversions": int(sessions * random.uniform(0.005, 0.04)),
+                }
+            )
+    pd.DataFrame(rows).to_excel(OUT / "website_analytics.xlsx", sheet_name="Daily", index=False)
+
+
+def nonprofit_donations() -> None:
+    campaigns = ["Annual Gala", "Giving Tuesday", "Spring Appeal", "Monthly Giving", "Capital Fund"]
+    start = date(2025, 9, 1)
+    rows = []
+    for i in range(1400):
+        rows.append(
+            {
+                "Donation ID": f"DON-{50000 + i}",
+                "Date": start + timedelta(days=random.randrange(280)),
+                "Donor": f"Donor {random.randrange(1, 640)}",
+                "Campaign": random.choice(campaigns),
+                "Channel": random.choices(["Online", "Check", "Event", "Payroll"], [0.55, 0.2, 0.15, 0.1])[0],
+                "Amount": money(random.choices([25, 50, 100, 250, 1000, 5000], [0.35, 0.25, 0.2, 0.12, 0.06, 0.02])[0]),
+                "Recurring": random.choices(["Yes", "No"], [0.3, 0.7])[0],
+            }
+        )
+    pd.DataFrame(rows).to_excel(OUT / "nonprofit_donations.xlsx", sheet_name="Donations", index=False)
+
+
+def inventory_snapshot() -> None:
+    categories = ["Fasteners", "Electrical", "Plumbing", "Safety", "Tools"]
+    warehouses = ["CLE-01", "ATX-02", "TPA-03"]
+    rows = []
+    for i in range(1600):
+        rows.append(
+            {
+                "Warehouse": random.choice(warehouses),
+                "SKU": f"SKU-{7000 + i}",
+                "Category": random.choice(categories),
+                "On Hand Qty": random.randrange(0, 1200),
+                "Reorder Point": random.randrange(20, 200),
+                "Unit Cost": money(random.uniform(0.4, 90)),
+                "Last Counted": date(2026, 5, 1) + timedelta(days=random.randrange(45)),
+            }
+        )
+    pd.DataFrame(rows).to_excel(OUT / "inventory_snapshot.xlsx", sheet_name="Stock", index=False)
+
+
+def real_estate_portfolio() -> None:
+    cities = ["Cleveland", "Columbus", "Tampa", "Austin", "Raleigh"]
+    types = ["Multifamily", "Retail", "Office", "Industrial"]
+    rows = []
+    for i in range(140):
+        units = random.randrange(1, 220)
+        rows.append(
+            {
+                "Property ID": f"PROP-{300 + i}",
+                "City": random.choice(cities),
+                "Type": random.choices(types, [0.5, 0.2, 0.15, 0.15])[0],
+                "Units": units,
+                "Sq Ft": units * random.randrange(650, 1400),
+                "Monthly Rent": money(units * random.uniform(850, 1900)),
+                "Occupancy Rate": f"{random.uniform(72, 100):.1f}%",
+                "Year Built": random.randrange(1968, 2024),
+                "Acquired": date(2015, 1, 1) + timedelta(days=random.randrange(3800)),
+            }
+        )
+    pd.DataFrame(rows).to_excel(OUT / "real_estate_portfolio.xlsx", sheet_name="Portfolio", index=False)
+
+
+def restaurant_pos() -> None:
+    """High-volume daily POS export: revenue + discounts across stores."""
+    stores = ["Downtown", "Airport", "Westside", "University"]
+    categories = ["Entrees", "Beverages", "Desserts", "Appetizers"]
+    start = date(2026, 1, 1)
+    rows = []
+    for day_offset in range(150):
+        for store in stores:
+            for category in categories:
+                gross = random.uniform(300, 4200)
+                rows.append(
+                    {
+                        "Date": start + timedelta(days=day_offset),
+                        "Store": store,
+                        "Category": category,
+                        "Items Sold": random.randrange(25, 420),
+                        "Gross Sales": money(gross),
+                        "Discounts": money(gross * random.uniform(0.02, 0.11)),
+                    }
+                )
+    pd.DataFrame(rows).to_excel(OUT / "restaurant_pos.xlsx", sheet_name="Daily Sales", index=False)
+
+
+def pivot_wide_report() -> None:
+    """Pivot-shaped data (months as columns) — the classic 'wrong shape' export.
+    The bar is graceful handling: parse, profile, and a valid generic dashboard."""
+    regions = ["West", "East", "Central", "South", "International"]
+    months = [date(2026, m, 1).strftime("%b %Y") for m in range(1, 13)]
+    rows = []
+    for region in regions:
+        row = {"Region": region}
+        base = random.uniform(40_000, 120_000)
+        for i, month in enumerate(months):
+            row[month] = round(base * (1 + 0.02 * i) * (0.9 + random.random() * 0.2), 2)
+        rows.append(row)
+    with pd.ExcelWriter(OUT / "pivot_wide_report.xlsx", engine="openpyxl") as writer:
+        pd.DataFrame(rows).to_excel(writer, sheet_name="Revenue by Region", index=False)
+
+
 if __name__ == "__main__":
     sales_pipeline()
     ecommerce_orders()
     financial_statement()
     hr_roster()
+    website_analytics()
+    nonprofit_donations()
+    inventory_snapshot()
+    real_estate_portfolio()
+    restaurant_pos()
+    pivot_wide_report()
     print("fixtures written to", OUT)
