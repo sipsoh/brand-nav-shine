@@ -17,22 +17,22 @@ export default function RootLayout({
   const content = (
     <html lang="en">
       <body className="min-h-screen antialiased">
-        <header className="border-b border-neutral-200 bg-white">
+        <header className="border-b border-neutral-200 bg-white dark:border-white/10 dark:bg-[#0d0d0d]">
           <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-            <Link href="/" className="text-lg font-semibold tracking-tight">
+            <Link href="/" className="text-lg font-semibold tracking-tight dark:text-white">
               Picxify
             </Link>
-            <div className="flex items-center gap-6 text-sm text-neutral-600">
-              <Link href="/pricing" className="hover:text-neutral-900">
+            <div className="flex items-center gap-6 text-sm text-neutral-600 dark:text-neutral-400">
+              <Link href="/pricing" className="hover:text-neutral-900 dark:hover:text-white">
                 Pricing
               </Link>
-              <Link href="/app" className="hover:text-neutral-900">
+              <Link href="/app" className="hover:text-neutral-900 dark:hover:text-white">
                 App
               </Link>
               <AuthControls />
               <Link
                 href="/app/upload"
-                className="rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white hover:bg-neutral-700"
+                className="rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white hover:bg-neutral-700 dark:bg-white/10 dark:hover:bg-white/20"
               >
                 Create a dashboard
               </Link>

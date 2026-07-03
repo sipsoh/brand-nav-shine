@@ -16,7 +16,7 @@ export default function AppLayout({
   const pathname = usePathname();
   return (
     <div>
-      <div className="border-b border-neutral-200 bg-white/85 backdrop-blur">
+      <div className="border-b border-neutral-200 bg-white/85 backdrop-blur dark:border-white/10 dark:bg-[#0d0d0d]/85">
         <nav className="mx-auto flex max-w-7xl gap-1 px-6 py-2">
           {navItems.map((item) => {
             const active =
@@ -27,8 +27,8 @@ export default function AppLayout({
                 href={item.href}
                 className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
                   active
-                    ? "bg-emerald-50 font-semibold text-emerald-700"
-                    : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+                    ? "bg-emerald-50 font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                    : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-white/10 dark:hover:text-white"
                 }`}
               >
                 {item.label}

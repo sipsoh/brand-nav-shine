@@ -124,7 +124,7 @@ function ShareControl({
           onClick={() => setOpen(false)}
         >
           <div
-            className="mt-[10vh] w-[min(520px,calc(100vw-32px))] rounded-3xl bg-white p-7 text-neutral-900 shadow-2xl"
+            className="mt-[10vh] w-[min(520px,calc(100vw-32px))] rounded-3xl bg-white p-7 text-neutral-900 shadow-2xl dark:bg-[#1a1a19] dark:text-white dark:shadow-none dark:ring-1 dark:ring-white/10"
             onClick={(event) => event.stopPropagation()}
           >
             <h3 className="text-lg font-bold tracking-tight">Share this dashboard</h3>
@@ -146,8 +146,8 @@ function ShareControl({
                   onClick={() => void setLevel(level)}
                   className={`flex w-full items-baseline justify-between rounded-xl border px-4 py-3 text-left text-sm transition ${
                     visibility === level
-                      ? "border-emerald-500 bg-emerald-50"
-                      : "border-neutral-200 hover:border-neutral-300"
+                      ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40"
+                      : "border-neutral-200 hover:border-neutral-300 dark:border-white/10 dark:hover:border-white/20"
                   }`}
                 >
                   <span className="font-semibold">{label}</span>
@@ -156,8 +156,8 @@ function ShareControl({
               ))}
             </div>
             {visibility !== "private" && shareUrl && (
-              <div className="mt-4 flex items-center gap-2 rounded-xl bg-neutral-50 px-3 py-2.5">
-                <code className="min-w-0 flex-1 truncate text-xs text-neutral-600">
+              <div className="mt-4 flex items-center gap-2 rounded-xl bg-neutral-50 px-3 py-2.5 dark:bg-white/5">
+                <code className="min-w-0 flex-1 truncate text-xs text-neutral-600 dark:text-neutral-300">
                   {shareUrl}
                 </code>
                 <button
@@ -166,17 +166,17 @@ function ShareControl({
                     void navigator.clipboard.writeText(shareUrl);
                     setCopied(true);
                   }}
-                  className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-700"
+                  className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-700 dark:bg-white/15 dark:hover:bg-white/25"
                 >
                   {copied ? "Copied!" : "Copy link"}
                 </button>
               </div>
             )}
-            {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+            {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="mt-5 w-full rounded-xl border border-neutral-200 py-2 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
+              className="mt-5 w-full rounded-xl border border-neutral-200 py-2 text-sm font-semibold text-neutral-600 hover:bg-neutral-50 dark:border-white/10 dark:text-neutral-300 dark:hover:bg-white/5"
             >
               Done
             </button>

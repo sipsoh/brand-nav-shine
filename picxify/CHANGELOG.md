@@ -1,5 +1,36 @@
 # Changelog
 
+## Dashboard renderer: dark mode + status-color consistency (2026-07-03)
+
+- **Dark mode wired end-to-end** for the executive dashboard renderer (KPI
+  tiles, line/bar/donut/funnel ECharts, section layout, insights/actions/
+  sources overlays). Charts still generate once server-side in light-mode hex
+  (`chart_builder.py`); dark mode is a presentational transform applied at
+  render time — the same pattern already used for compact axis/tooltip
+  formatting — so the spec stays pure JSON. New `apps/web/lib/chart-theme.ts`
+  holds the validated light→dark token map (chrome, the 8-slot categorical
+  palette, the ordinal funnel ramp) plus explicit dark tooltip styling; new
+  `apps/web/lib/use-color-scheme.ts` tracks `prefers-color-scheme` for the
+  canvas-rendered charts, which can't read CSS custom properties. UI chrome
+  uses Tailwind `dark:` variants against the same tokens.
+- Picked a genuinely new 5-step dark ordinal ramp (not a naive per-step flip)
+  after the first attempt failed `validate_palette.js --ordinal --mode dark`:
+  going past sequential step 600 loses light-end contrast and adjacent-step
+  separation. The middle step intentionally matches the categorical slot-1
+  dark blue, since the light source hex is already shared between both roles.
+- **Severity/priority colors now come from the documented status palette**
+  (good/warning/serious/critical) instead of ad hoc Tailwind emerald/red/amber
+  choices — insight severity stripes and action-priority badges are
+  consistent with `docs/engineering/design-system.md` and never collide with
+  the categorical chart palette.
+- Re-validated both categorical and ordinal palettes, light and dark, against
+  the dataviz skill's `validate_palette.js` — all four pass (categorical WARN
+  bands are the documented, mitigated relief cases).
+- Verified visually: rendered a full sample DashboardSpec (KPIs, line, donut,
+  horizontal bar, funnel, insights/actions overlays) through the real
+  components in a browser at both color schemes. Web lint/typecheck/build
+  clean; all 193 API tests and 37/37 evals unaffected (no backend changes).
+
 ## Data engine round 5: uncalculated formulas, header hygiene, numeric percents (2026-07-02)
 
 - **Uncalculated Excel formulas surfaced honestly**: a formula cell with no

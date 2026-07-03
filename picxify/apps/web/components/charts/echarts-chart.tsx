@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { applyChartTheme } from "@/lib/chart-theme";
+import { useColorScheme } from "@/lib/use-color-scheme";
 
 function compact(value: unknown): string {
   if (typeof value !== "number") return String(value ?? "");
@@ -44,6 +46,7 @@ export function EChartsChart({
   height?: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const scheme = useColorScheme();
 
   useEffect(() => {
     let disposed = false;
@@ -54,7 +57,7 @@ export function EChartsChart({
       const echarts = await import("echarts");
       if (disposed || !containerRef.current) return;
       chart = echarts.init(containerRef.current);
-      chart.setOption(withCompactFormatting(option));
+      chart.setOption(applyChartTheme(withCompactFormatting(option), scheme));
       observer = new ResizeObserver(() => chart?.resize());
       observer.observe(containerRef.current);
     })();
@@ -64,7 +67,7 @@ export function EChartsChart({
       observer?.disconnect();
       chart?.dispose();
     };
-  }, [option]);
+  }, [option, scheme]);
 
   return <div ref={containerRef} style={{ height, width: "100%" }} />;
 }
