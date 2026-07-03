@@ -1,0 +1,10 @@
+# pnpm 10+ reads build-script approvals from here, not package.json's "pnpm"
+# field (that field is silently ignored on pnpm 11+). These native deps need
+# their postinstall/build scripts to run; pre-approving them keeps a fresh
+# `pnpm install` from stopping at the ERR_PNPM_IGNORED_BUILDS gate, which also
+# makes `pnpm dev` fail its internal deps-status check.
+onlyBuiltDependencies:
+  - "@swc/core"
+  - esbuild
+  - sharp
+  - unrs-resolver
