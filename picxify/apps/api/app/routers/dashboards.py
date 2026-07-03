@@ -36,6 +36,9 @@ def get_generate_dispatcher() -> GenerateDispatcher:
     def dispatch(dashboard_id: uuid.UUID, job_id: uuid.UUID) -> None:
         from app.workers.tasks import generate_dashboard_job
 
+        if settings.run_jobs_inline:
+            generate_dashboard_job.run(str(dashboard_id), str(job_id))
+            return
         try:
             generate_dashboard_job.delay(str(dashboard_id), str(job_id))
         except Exception:

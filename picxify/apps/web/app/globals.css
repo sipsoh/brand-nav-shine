@@ -1,15 +1,21 @@
 @import "tailwindcss";
 
+/* Dark mode is CLASS-based, not OS-based: the `dark:` variant and the dark
+ * page plane below only apply when <html> carries a `.dark` class. The app
+ * ships light by default until an in-app theme toggle exists and every page
+ * (not just the dashboard renderer) has dark styling — otherwise un-themed
+ * pages render dark-on-dark. The dashboard's validated dark theme is intact
+ * and activates the moment `.dark` is set. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #f9f9f7; /* page plane (design-system token) */
   --foreground: #0b0b0b;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0d0d0d; /* dark page plane (design-system token) */
-    --foreground: #ffffff;
-  }
+:root.dark {
+  --background: #0d0d0d; /* dark page plane (design-system token) */
+  --foreground: #ffffff;
 }
 
 body {

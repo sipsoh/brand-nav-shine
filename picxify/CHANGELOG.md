@@ -1,5 +1,24 @@
 # Changelog
 
+## Local dev reliability: deterministic inline jobs + light-default theme (2026-07-03)
+
+- **Uploads no longer hang at "Processing…" when a stray Redis is running.**
+  The inline job fallback only kicked in when Celery's broker was
+  *unreachable*, so if the machine happened to have Redis running (from
+  another project), `.delay()` succeeded, the job queued, and — with no
+  Celery worker — sat there forever. Added an explicit `RUN_JOBS_INLINE`
+  setting (set automatically by `dev-up.sh`, documented in `.env.example`)
+  that runs parse/generate synchronously in-process regardless of whether
+  Redis is up. Local behaviour is now deterministic.
+- **Dark mode is now class-based (opt-in), not OS-based.** Following the
+  system `prefers-color-scheme` turned the page plane dark on every screen,
+  but only the dashboard renderer and top nav had dark styling — so
+  un-themed pages (upload, dataset profile, etc.) rendered dark text on a
+  dark background. The app now ships light by default via a `.dark`-class
+  strategy; the validated dashboard dark theme is intact and activates the
+  moment the class is set, ready for a proper in-app toggle plus full-app
+  dark styling as a follow-up.
+
 ## Dashboard renderer: dark mode + status-color consistency (2026-07-03)
 
 - **Dark mode wired end-to-end** for the executive dashboard renderer (KPI

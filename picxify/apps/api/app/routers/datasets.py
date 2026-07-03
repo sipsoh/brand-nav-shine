@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import get_current_user
+from app.config import settings
 from app.db import get_db
 from app.models.assumption import Assumption, AssumptionStatus
 from app.models.dataset import DataQualityFinding, Dataset, DatasetColumn, DatasetFile, DatasetTable
@@ -44,6 +45,9 @@ def get_parse_dispatcher() -> ParseDispatcher:
     def dispatch(dataset_id: uuid.UUID, job_id: uuid.UUID) -> None:
         from app.workers.tasks import parse_dataset_job
 
+        if settings.run_jobs_inline:
+            parse_dataset_job.run(str(dataset_id), str(job_id))
+            return
         try:
             parse_dataset_job.delay(str(dataset_id), str(job_id))
         except Exception:

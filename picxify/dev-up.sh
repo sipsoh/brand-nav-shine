@@ -76,6 +76,10 @@ if ! grep -q "^STORAGE_BACKEND=local" apps/api/.env 2>/dev/null; then
   echo "STORAGE_BACKEND=local" >> apps/api/.env
   echo "   (added STORAGE_BACKEND=local to apps/api/.env — files land on disk, no MinIO/S3 needed)"
 fi
+if ! grep -q "^RUN_JOBS_INLINE=true" apps/api/.env 2>/dev/null; then
+  echo "RUN_JOBS_INLINE=true" >> apps/api/.env
+  echo "   (added RUN_JOBS_INLINE=true to apps/api/.env — parse/generate run in-process, no Redis/worker needed)"
+fi
 
 if is_running "$API_PID"; then
   echo "   API: already running (pid $(cat "$API_PID"))"

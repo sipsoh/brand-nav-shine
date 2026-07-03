@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://picxify:picxify@localhost:5432/picxify"
     redis_url: str = "redis://localhost:6379/0"
 
+    # Run parse/generate jobs synchronously in-process instead of enqueuing to
+    # Celery. dev-up.sh sets this true so local dev needs no Redis or worker.
+    # Without it, jobs only ran inline when Celery's broker was *unreachable* —
+    # so a stray Redis running on the machine (from another project) would
+    # silently swallow jobs (queued but no worker), hanging uploads at
+    # "Processing…" forever. This makes the local behaviour deterministic.
+    run_jobs_inline: bool = False
+
     # "s3" (MinIO/S3/R2, needs real credentials) or "local" (plain files on
     # disk under local_storage_dir, served by the API itself — no object
     # store needed at all; for local dev only, never set this in production).
