@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
+from typing import Protocol
 
 import boto3
 from botocore.client import Config
@@ -16,11 +18,21 @@ class ObjectStat:
     etag: str | None = None
 
 
-class StorageService:
-    """S3-compatible object storage (MinIO in dev, S3/R2 in production).
+class StorageService(Protocol):
+    """Object storage contract. Two implementations: S3-compatible (MinIO/S3/
+    R2, real infra) and local-disk (no infra at all — for a laptop with no
+    Docker). Raw uploads are private; clients only ever touch them through
+    presigned URLs."""
 
-    Raw uploads are private; clients only ever touch them through presigned URLs.
-    """
+    def presign_put(self, object_key: str, content_type: str | None) -> str: ...
+    def presign_get(self, object_key: str) -> str: ...
+    def get_bytes(self, object_key: str) -> bytes: ...
+    def put_bytes(self, object_key: str, data: bytes, content_type: str | None = None) -> None: ...
+    def stat_object(self, object_key: str) -> ObjectStat | None: ...
+
+
+class S3StorageService:
+    """S3-compatible object storage (MinIO in dev, S3/R2 in production)."""
 
     def __init__(self) -> None:
         self._client = boto3.client(
@@ -71,9 +83,55 @@ class StorageService:
         return ObjectStat(size_bytes=head["ContentLength"], etag=head.get("ETag"))
 
 
+class LocalDiskStorageService:
+    """Plain files on disk under `local_storage_dir` — no object store at
+    all. There is no real presigned URL for a local file, so `presign_put`/
+    `presign_get` point at `PUT`/`GET /local-storage/{key}` on this same API
+    process instead (see `app/routers/local_storage.py`); the browser still
+    does a direct PUT/GET, it just lands on the API instead of MinIO/S3.
+
+    Dev-only: never set STORAGE_BACKEND=local in production — these routes
+    have no auth (the object key's embedded UUIDs are the only obscurity)."""
+
+    def __init__(self) -> None:
+        self._root = Path(settings.local_storage_dir).resolve()
+        self._root.mkdir(parents=True, exist_ok=True)
+
+    def _path(self, object_key: str) -> Path:
+        # object_key is server-generated (uuid-based); still resolve and
+        # confirm containment before touching disk, as a defense-in-depth
+        # measure against a malformed key ever reaching here.
+        path = (self._root / object_key).resolve()
+        if self._root not in path.parents and path != self._root:
+            raise ValueError(f"Refusing to touch a path outside local storage: {object_key!r}")
+        return path
+
+    def presign_put(self, object_key: str, content_type: str | None) -> str:
+        return f"{settings.api_url}/local-storage/{object_key}"
+
+    def presign_get(self, object_key: str) -> str:
+        return f"{settings.api_url}/local-storage/{object_key}"
+
+    def get_bytes(self, object_key: str) -> bytes:
+        return self._path(object_key).read_bytes()
+
+    def put_bytes(self, object_key: str, data: bytes, content_type: str | None = None) -> None:
+        path = self._path(object_key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+    def stat_object(self, object_key: str) -> ObjectStat | None:
+        path = self._path(object_key)
+        if not path.is_file():
+            return None
+        return ObjectStat(size_bytes=path.stat().st_size)
+
+
 @lru_cache
 def _default_storage() -> StorageService:
-    return StorageService()
+    if settings.storage_backend == "local":
+        return LocalDiskStorageService()
+    return S3StorageService()
 
 
 def get_storage() -> StorageService:

@@ -23,6 +23,10 @@ __pycache__/
 dist/
 build/
 
+# dev-up.sh / dev-down.sh runtime state (pids, logs) and local-disk storage
+.dev/
+apps/api/.local-storage/
+
 # OS / editor
 .DS_Store
 .idea/

@@ -2,7 +2,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import SERVICE_VERSION, settings
-from app.routers import dashboards, datasets, health, jobs, shares, uploads, users, workspaces
+from app.routers import (
+    dashboards,
+    datasets,
+    health,
+    jobs,
+    local_storage,
+    shares,
+    uploads,
+    users,
+    workspaces,
+)
 
 app = FastAPI(
     title="Picxify API",
@@ -22,6 +32,7 @@ app.include_router(dashboards.router)
 app.include_router(datasets.router)
 app.include_router(health.router)
 app.include_router(jobs.router)
+app.include_router(local_storage.router)
 app.include_router(shares.router)
 app.include_router(uploads.router)
 app.include_router(users.router)

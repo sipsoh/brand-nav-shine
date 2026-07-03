@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://picxify:picxify@localhost:5432/picxify"
     redis_url: str = "redis://localhost:6379/0"
 
+    # "s3" (MinIO/S3/R2, needs real credentials) or "local" (plain files on
+    # disk under local_storage_dir, served by the API itself — no object
+    # store needed at all; for local dev only, never set this in production).
+    storage_backend: str = "s3"
+    local_storage_dir: str = ".local-storage"
+
     s3_endpoint_url: str = "http://localhost:9000"
     s3_access_key_id: str = "minioadmin"
     s3_secret_access_key: str = "minioadmin"
