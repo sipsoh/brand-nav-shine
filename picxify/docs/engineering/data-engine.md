@@ -50,6 +50,15 @@ Sheets are read as raw cell grids (`header=None`) and reconstructed:
   are carried down to every row.
 - **Blank leading label columns** (the accounting-export shape) get the human
   default name `Category` instead of `column_1`.
+- **Header cells with embedded newlines** (Alt+Enter typed headers like
+  "Q1\nRevenue" as one cell) collapse to a single space, in both Excel and
+  quoted CSV headers.
+- **Uncalculated formula cells** — a live formula with no cached result
+  (common when a report-generation library writes formulas but never runs a
+  calculation engine) reads as silently blank via pandas' default
+  `data_only=True`. Detected by comparing a `data_only=False` load's formula
+  text against the already-loaded grid; surfaced as an honest warning
+  finding naming the sheet and cell count, rather than an unexplained gap.
 
 ## Totals never double-count
 
@@ -83,7 +92,14 @@ Sheets are read as raw cell grids (`header=None`) and reconstructed:
   text files; quoted fields with embedded newlines; title/metadata preamble
   lines above CSV headers.
 - Percent strings stored uniformly as 0–1 fractions ("45%" → 0.45) so percent
-  formatting can always multiply by 100.
+  formatting can always multiply by 100. Native numeric columns (never a
+  text string — a BI-tool or database export) get the same treatment when
+  the name is unambiguously percent-shaped (`%`, `percent`, `pct` — never
+  bare `rate`/`ratio`, which are ambiguous with money/other multiples):
+  whole-number percents (`15` meaning 15%) are divided by 100, values
+  already stored as 0–1 fractions are left alone, either way tagged with
+  the `percent` unit so display always shows "15%" instead of a bare `15`
+  or `0.15`.
 - Placeholder null tokens (`N/A`, `-`, `—`, `none`, `#REF!`, …) become real
   nulls so numeric columns still coerce.
 - Repeated header lines inside the data (page-break exports) are dropped.

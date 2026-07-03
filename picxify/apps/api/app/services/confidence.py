@@ -35,6 +35,11 @@ STRUCTURE_PENALTIES: dict[str, float] = {
     # review, even when the extraction happens to look clean.
     "table_from_ocr": 0.45,
     "table_from_pdf": 0.05,  # extracted from a PDF's text layer
+    # A formula with no cached result reads as silently blank — this often
+    # means an entire column's values (and anything computed from them) are
+    # missing, not just a structural guess, so it alone crosses the
+    # low-confidence line the same way OCR does.
+    "uncalculated_formulas": 0.42,
     "relational_join_applied": 0.05,  # inferred a fact/dimension relationship
 }
 

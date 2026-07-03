@@ -92,6 +92,9 @@ def parse_csv(filename: str, data: bytes) -> RawTable:
                 meta={"count": skipped},
             )
         )
+    dataframe.columns = [
+        _clean_header_text(str(c)) if isinstance(c, str) else c for c in dataframe.columns
+    ]
     return RawTable(name=Path(filename).stem, dataframe=dataframe, notes=notes)
 
 
@@ -143,14 +146,72 @@ def parse_excel(filename: str, data: bytes) -> list[RawTable]:
     except Exception as error:
         raise ParseError("We could not read this spreadsheet.") from error
 
+    uncalculated_by_sheet = _find_uncalculated_formulas(data, sheets)
+
     tables: list[RawTable] = []
     for sheet_name, grid in sheets.items():
         if grid.dropna(how="all").empty:
             continue  # skip empty sheets
-        tables.extend(extract_tables(sheet_name, grid))
+        extracted = extract_tables(sheet_name, grid)
+        count = uncalculated_by_sheet.get(sheet_name, 0)
+        if count:
+            note = TransformNote(
+                finding_type="uncalculated_formulas",
+                severity="warning",
+                message=(
+                    f"'{sheet_name}' has {count} formula cell(s) with no calculated "
+                    "value — they read as blank here. Open the file in Excel or "
+                    "Google Sheets, let it recalculate, save, and re-upload."
+                ),
+                meta={"count": count},
+            )
+            for table in extracted:
+                table.notes.append(note)
+        tables.extend(extracted)
     if not tables:
         raise ParseError("The spreadsheet has no sheets with data.")
     return tables
+
+
+def _find_uncalculated_formulas(data: bytes, sheets: dict) -> dict[str, int]:
+    """A formula cell with no cached result (common from report-generation
+    libraries that write formulas but never run a calculation engine) reads
+    as silently blank — pandas' openpyxl reader defaults to data_only=True,
+    same as Excel showing '0' for a formula it hasn't recalculated yet.
+
+    `sheets` is the dict of DataFrames pandas already read (data_only=True,
+    reused here instead of a second openpyxl load — a 21-sheet real-world
+    workbook takes long enough to parse once). A single data_only=False
+    load gets the formula text; a formula cell whose pandas-read
+    counterpart is NaN is uncalculated."""
+    import openpyxl
+
+    try:
+        raw = openpyxl.load_workbook(BytesIO(data), data_only=False, read_only=True)
+    except Exception:
+        return {}
+
+    counts: dict[str, int] = {}
+    try:
+        for sheet_name in raw.sheetnames:
+            grid = sheets.get(sheet_name)
+            if grid is None:
+                continue
+            count = 0
+            for cell in raw[sheet_name].iter_rows():
+                for raw_cell in cell:
+                    if not (isinstance(raw_cell.value, str) and raw_cell.value.startswith("=")):
+                        continue
+                    row_index, col_index = raw_cell.row - 1, raw_cell.column - 1
+                    if row_index >= grid.shape[0] or col_index >= grid.shape[1]:
+                        continue
+                    if pd.isna(grid.iat[row_index, col_index]):
+                        count += 1
+            if count:
+                counts[sheet_name] = count
+    finally:
+        raw.close()
+    return counts
 
 
 def parse_pdf(filename: str, data: bytes) -> list[RawTable]:
@@ -986,6 +1047,14 @@ def _looks_like_period(value) -> bool:
     return hasattr(value, "year")  # datetime-like header cells
 
 
+def _clean_header_text(text: str) -> str:
+    """Collapse embedded newlines/tabs/runs of whitespace to single spaces —
+    a header manually typed with Alt+Enter ('Q1\\nRevenue' as one cell) must
+    read the same as a plain 'Q1 Revenue' everywhere downstream (dashboard
+    titles, chart labels, snake_case column matching)."""
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _header_cell(value, index: int) -> str:
     if pd.isna(value) or str(value).strip() == "":
         return f"column_{index + 1}"
@@ -993,13 +1062,13 @@ def _header_cell(value, index: int) -> str:
         return value.strftime("%Y-%m-%d")
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
-    return str(value).strip()
+    return _clean_header_text(str(value))
 
 
 def _join_header(parts: list, index: int) -> str:
     texts: list[str] = []
     for part in parts:
-        text = "" if pd.isna(part) else str(part).strip()
+        text = "" if pd.isna(part) else _clean_header_text(str(part))
         if text and (not texts or texts[-1].lower() != text.lower()):
             texts.append(text)
     return " ".join(texts) or f"column_{index + 1}"

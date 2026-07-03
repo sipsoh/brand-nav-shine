@@ -211,6 +211,129 @@ def test_wide_period_columns_unpivot_to_long():
     assert "wide_periods_unpivoted" in kinds
 
 
+def excel_bytes_with_formulas(rows: list[list], sheet: str = "Sheet1") -> bytes:
+    """pandas' ExcelWriter can only write plain values, so formula fixtures
+    need openpyxl directly. A string starting with '=' becomes a live
+    formula cell (uncalculated, since openpyxl never runs a calc engine)."""
+    import openpyxl
+
+    workbook = openpyxl.Workbook()
+    worksheet = workbook.active
+    worksheet.title = sheet
+    for row in rows:
+        worksheet.append(row)
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def test_uncalculated_formulas_detected_and_flagged():
+    rows = [
+        ["Item", "Qty", "Price", "Total"],
+        ["Widget", 5, 10, "=B2*C2"],
+        ["Gadget", 3, 20, "=B3*C3"],
+        ["Gizmo", 7, 15, "=B4*C4"],
+    ]
+    tables = parse_excel("report.xlsx", excel_bytes_with_formulas(rows))
+    df = tables[0].dataframe
+    assert df["Total"].isna().all()  # no cached value to read
+    kinds = {n.finding_type for n in tables[0].notes}
+    assert "uncalculated_formulas" in kinds
+    note = next(n for n in tables[0].notes if n.finding_type == "uncalculated_formulas")
+    assert note.meta["count"] == 3
+    assert note.severity == "warning"
+
+
+def test_calculated_values_produce_no_uncalculated_formula_note():
+    # Ordinary literal values (the common case: Excel/Sheets already cached
+    # every formula result before the file was saved) must never false-fire.
+    tables = parse_excel("report.xlsx", excel_bytes_with_formulas(
+        [["Item", "Total"], ["Widget", 50], ["Gadget", 60], ["Gizmo", 70]]
+    ))
+    kinds = {n.finding_type for n in tables[0].notes}
+    assert "uncalculated_formulas" not in kinds
+
+
+def test_excel_header_embedded_newline_normalized():
+    grid = [
+        ["Q1\nRevenue", "Region"],
+        [100.0, "West"],
+        [200.0, "East"],
+        [150.0, "North"],
+    ]
+    tables = parse_excel("report.xlsx", excel_bytes(grid))
+    assert list(tables[0].dataframe.columns) == ["Q1 Revenue", "Region"]
+
+
+def test_csv_header_embedded_newline_normalized():
+    text = '"Q1\nRevenue",Region\n100,West\n200,East\n150,North\n'
+    table = parse_csv("report.csv", text.encode("utf-8"))
+    assert list(table.dataframe.columns) == ["Q1 Revenue", "Region"]
+
+
+def test_merged_header_with_embedded_newline_normalized():
+    grid = [
+        ["Region", "Q1\nActuals", None, "Q2\nActuals", None],
+        [None, "Revenue", "Orders", "Revenue", "Orders"],
+        ["West", 100.0, 5, 130.0, 6],
+        ["East", 90.0, 4, 120.0, 7],
+    ]
+    tables = parse_excel("report.xlsx", excel_bytes(grid))
+    assert list(tables[0].dataframe.columns) == [
+        "Region", "Q1 Actuals Revenue", "Q1 Actuals Orders",
+        "Q2 Actuals Revenue", "Q2 Actuals Orders",
+    ]
+
+
+def test_numeric_percent_column_whole_numbers_rescaled():
+    df = pd.DataFrame({"Growth %": [15, 22, -5, 8], "Region": ["W", "E", "S", "N"]})
+    normalized = normalize_table(df)
+    assert normalized.dataframe["Growth %"].tolist() == pytest.approx([0.15, 0.22, -0.05, 0.08])
+    assert normalized.type_hints["Growth %"] == "percent"
+    kinds = {n.finding_type for n in normalized.notes}
+    assert "numeric_percent_detected" in kinds
+
+
+def test_numeric_percent_column_already_fraction_not_rescaled():
+    df = pd.DataFrame({"Conversion Pct": [0.15, 0.22, 0.05, 0.08]})
+    normalized = normalize_table(df)
+    assert normalized.dataframe["Conversion Pct"].tolist() == pytest.approx(
+        [0.15, 0.22, 0.05, 0.08]
+    )
+    assert normalized.type_hints["Conversion Pct"] == "percent"
+
+
+def test_numeric_percent_detection_ignores_ambiguous_names():
+    # "rate"/"ratio" alone are ambiguous (hourly_rate is money, debt_ratio
+    # can be a plain multiple) — only an explicit %/percent/pct name fires.
+    df = pd.DataFrame({"hourly_rate": [45.0, 60.0, 38.0, 52.0], "debt_ratio": [1.2, 0.8, 1.5, 0.9]})
+    normalized = normalize_table(df)
+    assert normalized.type_hints == {}
+    assert normalized.dataframe["hourly_rate"].tolist() == [45.0, 60.0, 38.0, 52.0]
+
+
+def test_numeric_percent_note_metadata_is_json_serializable():
+    # Regression: `values.abs().median() <= threshold` produces numpy.bool_,
+    # not a native bool — the JSON DB column can't serialize numpy scalars,
+    # and this crashed the whole parse job (caught building the eval fixture).
+    import json
+
+    df = pd.DataFrame({"Growth %": [15, 22, -5, 8]})
+    normalized = normalize_table(df)
+    note = next(n for n in normalized.notes if n.finding_type == "numeric_percent_detected")
+    json.dumps(note.meta)  # must not raise
+    assert type(note.meta["alreadyFraction"]) is bool
+
+
+def test_numeric_percent_detection_skips_already_string_coerced_columns():
+    # A column string-coerced from "45%" text already got unit=percent from
+    # _coerce_numeric_strings; the numeric-native pass must not touch it twice.
+    df = pd.DataFrame({"ctr_pct": ["2.5%", "3.1%", "1.9%"]})
+    normalized = normalize_table(df)
+    assert normalized.dataframe["ctr_pct"].tolist() == pytest.approx([0.025, 0.031, 0.019])
+    assert normalized.type_hints["ctr_pct"] == "percent"
+
+
 def test_single_blank_row_splits_when_next_row_is_a_header():
     grid = [
         ["Code", "Meaning"],

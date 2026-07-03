@@ -270,6 +270,31 @@ EXPECTATIONS = {
         "required_kpi_tokens": ["total amount"],
         "chart_aggregations_forbidden": [],
     },
+    "uncalculated_formula_report.xlsx": {
+        # A 'Total' column is live formulas with no cached value (a report
+        # tool that never ran a calc engine) — must fall back to a real
+        # measure (Spend), never show a blank/zero 'Total' KPI.
+        "use_case": "marketing",
+        "primary_sheet": "Campaign Report",
+        "required_kpi_tokens": ["total spend"],
+        "chart_aggregations_forbidden": [("Total", "sum")],
+    },
+    "newline_headers_report.xlsx": {
+        # Headers with an embedded newline ('Q1\nRevenue' typed with
+        # Alt+Enter) must read as clean text, not a raw newline.
+        "use_case": None,
+        "primary_sheet": "Quarterly",
+        "required_kpi_tokens": ["total q1 revenue"],
+        "chart_aggregations_forbidden": [],
+    },
+    "numeric_percent.csv": {
+        # Percent columns that were NEVER text (native floats from a BI
+        # export) — one already a 0-1 fraction, one whole-number percent.
+        "use_case": None,
+        "primary_sheet": "numeric_percent",
+        "required_kpi_tokens": ["rows analyzed"],
+        "chart_aggregations_forbidden": [],
+    },
 }
 
 

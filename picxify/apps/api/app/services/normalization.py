@@ -81,6 +81,7 @@ def normalize_table(dataframe: pd.DataFrame, table_name: str | None = None) -> N
     df = _null_placeholder_tokens(df, notes)
     df = _fill_grouped_labels(df, notes)
     df = _coerce_numeric_strings(df, notes, type_hints)
+    df = _detect_numeric_percent_columns(df, notes, type_hints)
     df = _coerce_dates(df, notes)
     df = _coerce_serial_dates(df, notes)
     df = _unpivot_wide_periods(df, notes, table_name)
@@ -571,6 +572,54 @@ def _measure_name(table_name: str | None) -> str:
         if candidate and len(candidate) <= 40:
             return candidate
     return "Value"
+
+
+# Unambiguous percent tokens only — bare "rate"/"ratio" are excluded on
+# purpose ("hourly_rate" is money, "debt_ratio" can be a plain multiple; only
+# an explicit %/percent/pct token is a safe signal).
+# Underscore doesn't create a \b word boundary ("conversion_pct" wouldn't
+# match \bpct\b), so treat underscore and whitespace as separators explicitly.
+NUMERIC_PERCENT_NAME = re.compile(r"%|(?:^|[_\s])(percent|pct)(?:[_\s]|$)", re.IGNORECASE)
+# Native floats/ints already stored as 0-1 fractions vs. whole-number percents
+# ("0.15" vs "15") are told apart by typical magnitude, not the column name.
+NUMERIC_PERCENT_FRACTION_CEILING = 1.5
+
+
+def _detect_numeric_percent_columns(
+    df: pd.DataFrame, notes: list[TransformNote], type_hints: dict[str, str]
+) -> pd.DataFrame:
+    """A column that was NEVER text (came in as a native float/int, e.g. from
+    a database export or a BI tool) gets no unit from string coercion at
+    all — an explicitly percent-named column would otherwise display as a
+    bare small decimal ('0.15') or a bare integer ('15') instead of a
+    percentage. Only fires on an unambiguous name; never rescales a column
+    already tagged by string coercion."""
+    for column in df.columns:
+        name = str(column)
+        if column in type_hints or not NUMERIC_PERCENT_NAME.search(name):
+            continue
+        if not pd.api.types.is_numeric_dtype(df[column]) or pd.api.types.is_bool_dtype(df[column]):
+            continue
+        values = df[column].dropna()
+        if len(values) < 3:
+            continue
+        already_fraction = bool(values.abs().median() <= NUMERIC_PERCENT_FRACTION_CEILING)
+        if not already_fraction:
+            df[column] = df[column] / 100.0
+        type_hints[column] = "percent"
+        notes.append(
+            TransformNote(
+                finding_type="numeric_percent_detected",
+                severity="info",
+                message=(
+                    f"'{name}' is a numeric percent column"
+                    + ("." if already_fraction else " stored as whole numbers; divided by 100.")
+                ),
+                column=name,
+                meta={"alreadyFraction": already_fraction},
+            )
+        )
+    return df
 
 
 def _stringify_mixed_columns(df: pd.DataFrame, notes: list[TransformNote]) -> pd.DataFrame:

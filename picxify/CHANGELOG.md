@@ -1,5 +1,34 @@
 # Changelog
 
+## Data engine round 5: uncalculated formulas, header hygiene, numeric percents (2026-07-02)
+
+- **Uncalculated Excel formulas surfaced honestly**: a formula cell with no
+  cached result (common from report-generation libraries that write
+  formulas but never run a calculation engine) used to read as silently
+  blank. Detected by comparing the raw formula text against the already-
+  parsed grid; surfaces as a named warning finding ("'Sheet' has N formula
+  cell(s) with no calculated value…") instead of an unexplained gap. Found
+  and correctly flagged 21 genuinely stale cells in the real 21-sheet
+  ticket workbook used throughout this project (Days/Hours/Minutes
+  breakdown columns never recalculated after being added).
+- **Header cells with embedded newlines** (Alt+Enter typed headers like
+  "Q1\nRevenue" as one cell) normalize to a single space, in Excel and
+  quoted CSV headers alike.
+- **Numeric-native percent columns**: a column that was NEVER text (a
+  database/BI-tool export) with an unambiguous percent-shaped name now gets
+  correctly scaled and unit-tagged, whether stored as whole-number percents
+  or already as 0-1 fractions — previously displayed as a bare decimal or
+  integer instead of a percentage. Conservative on ambiguous names
+  (`hourly_rate` is money, not percent).
+- Caught and fixed a real bug building this: the whole-number-vs-fraction
+  check produced a numpy `bool_`, which the JSON metadata column can't
+  serialize — crashed the parse job outright. Native Python `bool()` cast
+  fixes it; added a permanent regression test for the failure mode.
+- 3 new fixtures (uncalculated formulas, newline headers, numeric percents):
+  37/37 evals; 185 tests. Real ticket workbook re-verified — same correct
+  sheet/rows/KPIs, now with an honest (and accurate) confidence flag on the
+  21 stale cells it always had.
+
 ## Data engine round 4: confidence, multi-file joins, PDF/OCR, feedback loop (2026-07-02)
 
 Documented in `docs/engineering/data-engine.md`.

@@ -808,6 +808,67 @@ def orders_customers_pair() -> None:
     orders.to_csv(OUT / "join_orders.csv", index=False)
 
 
+def uncalculated_formula_report() -> None:
+    """A report-generation library wrote live formula cells for a computed
+    column but never ran a calculation engine — the cells read as blank.
+    Regions/channels are plain values so the rest of the table still
+    analyzes; only the 'Total' column is affected."""
+    import openpyxl
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Campaign Report"
+    sheet.append(["Campaign", "Region", "Spend", "Multiplier", "Total"])
+    start = date(2026, 1, 5)
+    for i in range(160):
+        row = 2 + i
+        spend = round(random.uniform(200, 4_000), 2)
+        sheet.append(
+            [
+                f"Campaign {i % 25}",
+                random.choice(REGIONS),
+                spend,
+                round(random.uniform(1.05, 1.4), 2),
+                f"=C{row}*D{row}",
+            ]
+        )
+    workbook.save(OUT / "uncalculated_formula_report.xlsx")
+
+
+def newline_headers_report() -> None:
+    """Headers manually typed with Alt+Enter — a real habit in hand-built
+    Excel reports ('Q1\\nRevenue' as one cell, not a merged two-row header)."""
+    import openpyxl
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Quarterly"
+    sheet.append(["Region", "Q1\nRevenue", "Q2\nRevenue", "Notes\nInternal"])
+    for region in REGIONS:
+        sheet.append(
+            [
+                region,
+                round(random.uniform(40_000, 120_000), 2),
+                round(random.uniform(40_000, 120_000), 2),
+                "reviewed",
+            ]
+        )
+    workbook.save(OUT / "newline_headers_report.xlsx")
+
+
+def numeric_percent_csv() -> None:
+    """A BI-tool export where percent columns are native numbers, never
+    text — one column already 0-1 fractions, another as whole-number
+    percents, both under unambiguous %/pct names."""
+    lines = ["Region,Month,Conversion Pct,Growth %"]
+    for m in range(1, 7):
+        for region in REGIONS:
+            conversion = round(random.uniform(0.02, 0.18), 4)  # already a fraction
+            growth = round(random.uniform(-15, 40), 1)  # whole-number percent
+            lines.append(f"{region},{date(2026, m, 1).strftime('%b 2026')},{conversion},{growth}")
+    (OUT / "numeric_percent.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 if __name__ == "__main__":
     sales_pipeline()
     ecommerce_orders()
@@ -843,4 +904,7 @@ if __name__ == "__main__":
     pdf_multipage_orders()
     scanned_donation_summary()
     orders_customers_pair()
+    uncalculated_formula_report()
+    newline_headers_report()
+    numeric_percent_csv()
     print("fixtures written to", OUT)

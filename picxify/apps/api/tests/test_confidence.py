@@ -46,6 +46,14 @@ def test_reasons_ranked_by_severity():
     assert result.reasons[0] == "transposed"  # biggest penalty (0.15) first
 
 
+def test_uncalculated_formulas_trip_low_confidence_alone():
+    result = compute_structure_confidence(
+        [TransformNote("uncalculated_formulas", "warning", "3 formula cell(s) blank")]
+    )
+    assert result.score == pytest.approx(0.58)
+    assert result.score < LOW_CONFIDENCE_THRESHOLD  # entirely missing values, flag it
+
+
 def test_score_floors_at_zero_for_compounding_penalties():
     notes = [
         TransformNote("no_header_detected", "warning", "x"),
