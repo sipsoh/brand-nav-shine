@@ -486,6 +486,52 @@ def check(filename: str, spec: dict, expect: dict) -> list[str]:
                 "series"
             ):
                 problems.append(f"chart {widget['id']} has no rendered series")
+    problems.extend(check_coverage_contract(spec))
+    return problems
+
+
+def check_coverage_contract(spec: dict) -> list[str]:
+    """The coverage contract, asserted on EVERY fixture: each column is
+    represented in a widget or excluded with a reason — and the ledger is
+    honest (a column claimed as chart/kpi/table really appears there)."""
+    problems: list[str] = []
+    coverage = spec.get("coverage")
+    if not coverage:
+        return ["spec has no coverage ledger"]
+
+    chart_columns: set[str] = set()
+    kpi_columns: set[str] = set()
+    table_columns: set[str] = set()
+    for section in spec["sections"]:
+        for widget in section["widgets"]:
+            if widget["type"] == "chart":
+                qs = widget["chart"]["querySpec"]
+                chart_columns.update(m["column"] for m in qs.get("measures", []))
+                chart_columns.update(qs.get("dimensions") or [])
+                if qs.get("dateColumn"):
+                    chart_columns.add(qs["dateColumn"])
+            elif widget["type"] == "kpi":
+                kpi_columns.update((widget["kpi"].get("sourceTrace") or {}).get("columns") or [])
+            elif widget["type"] == "data_table":
+                table_columns.update(widget["table"]["columns"])
+
+    where = {"chart": chart_columns, "kpi": kpi_columns, "table": table_columns}
+    represented = 0
+    for entry in coverage["columns"]:
+        status = entry["status"]
+        if status == "excluded":
+            if not entry.get("reason"):
+                problems.append(f"column {entry['name']!r} excluded without a reason")
+            continue
+        represented += 1
+        if entry["name"] not in where[status]:
+            problems.append(
+                f"ledger claims {entry['name']!r} is in a {status} but no {status} shows it"
+            )
+    if len(coverage["columns"]) != coverage["columnsTotal"]:
+        problems.append("coverage ledger is missing columns")
+    if represented != coverage["columnsRepresented"]:
+        problems.append("coverage counts do not match the ledger")
     return problems
 
 

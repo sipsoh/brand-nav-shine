@@ -98,6 +98,29 @@
           "sourceInsightId": { "type": ["string", "null"] }
         }
       }
+    },
+    "coverage": {
+      "description": "The coverage contract ledger: every profiled column of the primary table, each represented in a widget or excluded with a computed reason. Written by the coverage auditor after chart execution; never authored by an LLM.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["columnsTotal", "columnsRepresented", "columns"],
+      "properties": {
+        "columnsTotal": { "type": "integer", "minimum": 0 },
+        "columnsRepresented": { "type": "integer", "minimum": 0 },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "status"],
+            "properties": {
+              "name": { "type": "string" },
+              "status": { "type": "string", "enum": ["chart", "kpi", "table", "excluded"] },
+              "reason": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -199,7 +222,25 @@
           }
         },
         "insight": { "$ref": "#/$defs/insight" },
-        "markdown": { "type": ["string", "null"] }
+        "markdown": { "type": ["string", "null"] },
+        "table": {
+          "description": "Payload for data_table widgets — the coverage backstop. Positional rows keep the spec compact; row order is meaningful (top rows by the primary measure when one exists).",
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["columns", "rows"],
+          "properties": {
+            "columns": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": { "type": ["string", "number", "boolean", "null"] }
+              }
+            },
+            "note": { "type": ["string", "null"], "maxLength": 240 },
+            "sourceTrace": { "$ref": "#/$defs/sourceTrace" }
+          }
+        }
       }
     },
     "insight": {

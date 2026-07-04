@@ -258,6 +258,12 @@ export interface SpecWidget {
   } | null;
   insight?: SpecInsight | null;
   markdown?: string | null;
+  table?: {
+    columns: string[];
+    rows: (string | number | boolean | null)[][];
+    note?: string | null;
+    sourceTrace?: SourceTrace;
+  } | null;
 }
 
 export interface SpecInsight {
@@ -293,6 +299,11 @@ export interface DashboardSpec {
   sections: { id: string; title: string; subtitle?: string; layout: string; widgets: SpecWidget[] }[];
   insights: SpecInsight[];
   actions: { label: string; priority: string; rationale: string; sourceInsightId?: string | null }[];
+  coverage?: {
+    columnsTotal: number;
+    columnsRepresented: number;
+    columns: { name: string; status: string; reason?: string | null }[];
+  } | null;
 }
 
 export interface DashboardDetail {

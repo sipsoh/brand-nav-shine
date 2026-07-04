@@ -53,6 +53,10 @@ def assert_source_traces(spec: dict) -> None:
                 "sourceTrace"
             ):
                 errors.append(f"insight widget '{widget.get('id')}' has no sourceTrace")
+            if widget_type == "data_table" and not (widget.get("table") or {}).get(
+                "sourceTrace"
+            ):
+                errors.append(f"data_table widget '{widget.get('id')}' has no sourceTrace")
     for insight in spec.get("insights", []):
         if not insight.get("sourceTrace"):
             errors.append(f"insight '{insight.get('id')}' has no sourceTrace")

@@ -40,6 +40,7 @@ export function SpecRenderer({
   const kpis: SpecWidget[] = [];
   const chartSections: { title: string; charts: SpecWidget[] }[] = [];
   const inlineInsights: SpecInsight[] = [];
+  const tableWidgets: SpecWidget[] = [];
   let execText: SpecWidget | null = null;
   for (const section of spec.sections) {
     const sectionCharts: SpecWidget[] = [];
@@ -49,6 +50,7 @@ export function SpecRenderer({
       else if (widget.type === "text" && !execText) execText = widget;
       else if (widget.type === "insight_card" && widget.insight)
         inlineInsights.push(widget.insight);
+      else if (widget.type === "data_table" && widget.table) tableWidgets.push(widget);
     }
     if (sectionCharts.length > 0) {
       chartSections.push({ title: section.title, charts: sectionCharts });
@@ -83,6 +85,14 @@ export function SpecRenderer({
                   {totalRows.toLocaleString()}
                 </span>{" "}
                 rows analyzed ·{" "}
+                {spec.coverage && (
+                  <>
+                    <span className="font-semibold text-emerald-100">
+                      {spec.coverage.columnsRepresented}/{spec.coverage.columnsTotal}
+                    </span>{" "}
+                    columns represented ·{" "}
+                  </>
+                )}
                 <span className="font-semibold text-emerald-100">{spec.assumptions.length}</span>{" "}
                 assumption(s) · every widget source-traced
               </p>
@@ -145,6 +155,16 @@ export function SpecRenderer({
             index={index + 1}
             title={chartSection.title}
             charts={chartSection.charts}
+            tableNames={tableNames}
+            onTrace={openTrace}
+          />
+        ))}
+
+        {tableWidgets.map((widget, index) => (
+          <DataTablePanel
+            key={widget.id}
+            index={chartSections.length + index + 1}
+            widget={widget}
             tableNames={tableNames}
             onTrace={openTrace}
           />
@@ -352,6 +372,77 @@ function ChartPanel({
   );
 }
 
+/** The coverage-contract backstop: columns no chart or KPI can honestly
+ * represent still appear here, so no data point silently vanishes. */
+function DataTablePanel({
+  index,
+  widget,
+  tableNames,
+  onTrace,
+}: {
+  index: number;
+  widget: SpecWidget;
+  tableNames: Record<string, string>;
+  onTrace: (title: string, trace: SourceTrace) => void;
+}) {
+  const table = widget.table!;
+  return (
+    <section className="mt-10">
+      <div className="mb-3.5 flex items-baseline gap-3.5">
+        <span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-emerald-600 dark:text-emerald-400">
+          {String(index).padStart(2, "0")}
+        </span>
+        <h2 className="whitespace-nowrap text-xl font-extrabold tracking-tight text-neutral-900 dark:text-white">
+          {widget.title}
+        </h2>
+        <span className="h-px flex-1 bg-gradient-to-r from-neutral-200 to-transparent dark:from-white/10" />
+      </div>
+      <div className="flex flex-col rounded-2xl border border-[rgba(11,11,11,0.10)] bg-[#fcfcfb] p-5 shadow-sm dark:border-white/10 dark:bg-[#1a1a19] dark:shadow-none">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                {table.columns.map((column) => (
+                  <th
+                    key={column}
+                    className="whitespace-nowrap border-b border-[#e1e0d9] px-3 py-2 text-left text-xs font-semibold text-[#52514e] dark:border-[#2c2c2a] dark:text-[#c3c2b7]"
+                  >
+                    {column}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {table.rows.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {row.map((value, cellIndex) => (
+                    <td
+                      key={cellIndex}
+                      className={`whitespace-nowrap border-b border-[rgba(11,11,11,0.06)] px-3 py-2 text-[#0b0b0b] dark:border-white/5 dark:text-white ${
+                        typeof value === "number" ? "text-right tabular-nums" : "text-left"
+                      }`}
+                    >
+                      {typeof value === "number" ? value.toLocaleString() : value ?? "—"}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {table.note && <p className="mt-2 text-xs text-[#898781]">{table.note}</p>}
+        {table.sourceTrace && (
+          <SourceLine
+            trace={table.sourceTrace}
+            tableNames={tableNames}
+            onClick={() => onTrace(widget.title, table.sourceTrace!)}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
 function Modal({
   children,
   onClose,
@@ -514,6 +605,29 @@ function SourcesPanel({ spec }: { spec: DashboardSpec }) {
             </li>
           ))}
         </ul>
+      )}
+      {spec.coverage && (
+        <>
+          <h4 className="mt-5 text-sm font-semibold text-neutral-900 dark:text-white">
+            Column coverage: {spec.coverage.columnsRepresented}/{spec.coverage.columnsTotal}{" "}
+            represented
+          </h4>
+          {spec.coverage.columns.some((c) => c.status === "excluded") ? (
+            <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm text-neutral-600 dark:text-neutral-300">
+              {spec.coverage.columns
+                .filter((c) => c.status === "excluded")
+                .map((c) => (
+                  <li key={c.name}>
+                    <b className="font-medium">{c.name}</b> — not shown: {c.reason}
+                  </li>
+                ))}
+            </ul>
+          ) : (
+            <p className="mt-1.5 text-sm text-neutral-600 dark:text-neutral-300">
+              Every column appears in a KPI, chart, or the data table.
+            </p>
+          )}
+        </>
       )}
     </div>
   );

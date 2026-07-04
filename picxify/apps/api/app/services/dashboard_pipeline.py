@@ -25,6 +25,7 @@ from app.services.dashboard_planner import (
     execute_charts,
     plan_dashboard,
 )
+from app.services.coverage import audit_and_backstop
 from app.services.insight_engine import ColumnMeta, compute_insights, quality_insights
 from app.services.llm import get_planner_llm
 from app.services.spec_validator import (
@@ -192,6 +193,10 @@ def _run(db: Session, storage, dashboard: Dashboard, job: GenerationJob) -> None
 
     _progress(db, job, *STEPS[3])
     execute_charts(spec, frames)
+    # Coverage contract: every column represented or excluded with a reason;
+    # unaccounted columns self-heal into the backstop table. Runs on the
+    # finished spec so it guards the LLM planner and the fallback alike.
+    audit_and_backstop(spec, df, table_id=str(primary.id))
 
     _progress(db, job, *STEPS[4])
     try:
