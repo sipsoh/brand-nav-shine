@@ -86,7 +86,9 @@ NAME_RULES: list[tuple[str, str, set[str] | None]] = [
     ("region", r"region|country|state|city|geo|location", None),
     ("customer", r"customer|client|respondent|user_name|contact", None),
     ("account", r"account|company|organization", None),
-    ("owner", r"owner|rep|salesperson|agent|assignee", None),
+    # '(^|_)rep($|_)' (not bare 'rep') keeps 'prepayments'/'reporting' from
+    # reading as a sales-rep/owner column.
+    ("owner", r"owner|(^|_)rep($|_)|salesperson|agent|assignee", None),
     ("segment", r"segment|tier|plan|cohort", None),
     ("comment", r"comment|feedback|note|response|review|message|text", None),
     ("quantity", r"count|quantity|qty|units|seats|volume", {"integer", "float"}),

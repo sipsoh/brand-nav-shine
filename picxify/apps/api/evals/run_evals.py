@@ -295,6 +295,19 @@ EXPECTATIONS = {
         "required_kpi_tokens": ["rows analyzed"],
         "chart_aggregations_forbidden": [],
     },
+    "ar_aging_snapshot.xlsx": {
+        # Every row shares one 'Period' (a single-month snapshot, not a
+        # time series) and has a 'Prepayments' currency column whose name
+        # contains the substring 'rep'. Neither must corrupt the dashboard:
+        # no fake "over time" chart, and Prepayments must never become a
+        # group-by dimension.
+        "use_case": None,
+        "primary_sheet": "AR Aging",
+        "required_kpi_tokens": ["rows analyzed"],
+        "chart_aggregations_forbidden": [],
+        "chart_dimensions_forbidden": ["Prepayments"],
+        "forbid_time_series": True,
+    },
 }
 
 
@@ -435,6 +448,19 @@ def check(filename: str, spec: dict, expect: dict) -> list[str]:
             for measure in query_spec.get("measures", []):
                 if measure["column"] == column and measure["aggregation"] == aggregation:
                     problems.append(f"chart uses forbidden {aggregation}({column})")
+
+    for column in expect.get("chart_dimensions_forbidden", []):
+        for query_spec in chart_specs:
+            if column in (query_spec.get("dimensions") or []):
+                problems.append(f"chart groups by forbidden dimension {column!r}")
+
+    if expect.get("forbid_time_series"):
+        for query_spec in chart_specs:
+            if query_spec.get("dateGrain"):
+                problems.append(
+                    f"chart built a time-series ({query_spec.get('dateColumn')} by "
+                    f"{query_spec['dateGrain']}) from data with no real time variation"
+                )
 
     # Universal invariants.
     for section in spec["sections"]:

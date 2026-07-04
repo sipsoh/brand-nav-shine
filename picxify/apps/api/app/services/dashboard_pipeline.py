@@ -246,6 +246,12 @@ def _pick_date_grain(df: pd.DataFrame, columns) -> str | None:
     if series.empty:
         return None
     span_days = (series.max() - series.min()).days
+    # A date column that never actually varies (every row shares one period,
+    # e.g. a single-month snapshot report) has no trend to show. Building a
+    # "Performance over time" chart from it produces a one-point chart
+    # misleadingly labeled as a trend, so skip the whole section instead.
+    if span_days <= 0:
+        return None
     return "month" if span_days >= 70 else "week"
 
 

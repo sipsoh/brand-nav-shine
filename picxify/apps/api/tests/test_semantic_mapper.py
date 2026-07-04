@@ -83,6 +83,26 @@ def test_generic_fallback_and_use_case_assumption():
     assert any("generic" in a["label"] for a in mapping.assumptions)
 
 
+def test_prepayments_column_is_not_misread_as_owner():
+    # 'prepayments' contains the substring 'rep' ('p-REP-ayments'); the owner
+    # rule must not fire on that, or a currency measure gets relabeled as a
+    # group-by dimension (regression: produced a nonsense "Credits by
+    # Prepayments" breakdown chart on a real AR-aging report).
+    table = TableInput(
+        name="ar_aging",
+        columns=[
+            make_column("prepayments", "float"),
+            make_column("credits", "float"),
+            make_column("sales_rep", "category"),
+        ],
+    )
+    mapping = map_dataset([table], filename="ar_aging.xlsx")
+    assert mapping.column_mappings["prepayments"].role == "measure"
+    assert mapping.column_mappings["prepayments"].semantic_type != "owner"
+    # The real 'rep' column (underscore-delimited token) should still match.
+    assert mapping.column_mappings["sales_rep"].semantic_type == "owner"
+
+
 def test_multiple_date_columns_produce_assumption():
     table = TableInput(
         name="deals",

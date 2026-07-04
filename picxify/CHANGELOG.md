@@ -1,5 +1,30 @@
 # Changelog
 
+## Two planner bugs from a real AR-aging report (2026-07-04)
+
+Found by generating a dashboard from a real facility AR-aging export and
+tracing why the result made no sense.
+
+- **A currency column silently became a chart dimension.** The heuristic
+  column classifier's "owner/sales-rep" rule matched the bare substring
+  `rep` with no word boundaries, so `Prepayments` ("p-**rep**-ayments")
+  misread as an owner/dimension column — producing a nonsense "Credits by
+  Prepayments" breakdown chart. Fixed to require `rep` as its own
+  underscore-delimited token (`(^|_)rep($|_)`), matching the idiom already
+  used elsewhere in the same rule list for `rents`/`credits`/`orders`.
+- **A constant date column produced a fake trend chart.** `_pick_date_grain`
+  picked the first date-role column without checking whether it actually
+  varies. A single-period snapshot report (every row shares one `Period`
+  value) still got a "Performance over time" section with a "by week"
+  chart — a one-point chart mislabeled as a trend. Now returns no grain
+  when the date column's span is zero, so the whole section is skipped
+  rather than faked.
+- New fixture `ar_aging_snapshot.xlsx` reproduces both failure modes at
+  once; the eval harness gained `chart_dimensions_forbidden` and
+  `forbid_time_series` checks to catch them. Verified the fixture fails
+  both checks with the fixes reverted, confirming they're real regression
+  guards. 198 tests pass (5 new); 38/38 evals.
+
 ## Local dev reliability: deterministic inline jobs + light-default theme (2026-07-03)
 
 - **Uploads no longer hang at "Processing…" when a stray Redis is running.**

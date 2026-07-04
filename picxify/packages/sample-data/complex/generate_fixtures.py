@@ -869,6 +869,36 @@ def numeric_percent_csv() -> None:
     (OUT / "numeric_percent.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def ar_aging_snapshot() -> None:
+    """A single-period AR-aging snapshot (every row shares one 'Period') with
+    a 'Prepayments' currency column — a real report that tripped two engine
+    bugs: 'Prepayments' misread as an 'owner' dimension (substring match on
+    'rep'), and a constant date column still producing a fake weekly trend."""
+    properties = [
+        "Bluewater Bay", "Cedarlake", "Lakeshore", "West Lake", "Eden Prairie",
+        "Overlook Village", "Gainesville", "McKinney", "Colonial Village",
+        "Garden Village",
+    ]
+    operators = ["American House", "Claiborne", "Dial Senior Living", "Discovery"]
+    rows = []
+    for i, prop in enumerate(properties):
+        rows.append(
+            {
+                "Operator": operators[i % len(operators)],
+                "Property": prop,
+                "Period": "May 2026",
+                "0-30 Days": round(random.uniform(2_000, 40_000), 2),
+                "31-60 Days": round(random.uniform(0, 15_000), 2),
+                "Prepayments": round(random.uniform(0, 30_000), 2),
+                "Credits": round(random.uniform(0, 20_000), 2),
+                "Total AR": round(random.uniform(5_000, 90_000), 2),
+                "Source Modified": (date(2026, 6, 8) + timedelta(days=i % 4)).isoformat(),
+            }
+        )
+    df = pd.DataFrame(rows)
+    df.to_excel(OUT / "ar_aging_snapshot.xlsx", sheet_name="AR Aging", index=False)
+
+
 if __name__ == "__main__":
     sales_pipeline()
     ecommerce_orders()
@@ -907,4 +937,5 @@ if __name__ == "__main__":
     uncalculated_formula_report()
     newline_headers_report()
     numeric_percent_csv()
+    ar_aging_snapshot()
     print("fixtures written to", OUT)
