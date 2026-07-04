@@ -37,6 +37,8 @@ class ColumnCtx:
     detected_type: str
     semantic_type: str | None
     role_hint: str | None
+    unique_ratio: float | None = None
+    nullable_ratio: float | None = None
 
 
 @dataclass
@@ -226,14 +228,57 @@ def _count_column(ctx: PlanningContext) -> str:
 
 
 def _ranked_dimensions(ctx: PlanningContext) -> list[ColumnCtx]:
+    """Rank grouping dimensions by GROUPABILITY first (a handful of repeated,
+    well-populated values), semantics second. Same principle as measures:
+    keywords rank, they never gate — a lineage column named 'Source File'
+    must not beat the real business dimension just because 'source' matches
+    a channel keyword."""
     priority = ["campaign", "channel", "segment", "region", "stage", "status", "owner"]
     dimensions = [c for c in _columns_by_role(ctx, "dimension") if c.semantic_type != "id"]
-    dimensions.sort(
-        key=lambda c: priority.index(c.semantic_type)
-        if c.semantic_type in priority
-        else len(priority)
-    )
+
+    def rank(column: ColumnCtx):
+        unique = column.unique_ratio
+        if unique is None:
+            groupability = 0.5  # unknown cardinality (LLM path/tests): neutral
+        elif unique <= 0.3:
+            groupability = 1.0  # repeated categories — what grouping is for
+        elif unique <= 0.6:
+            groupability = 0.4
+        else:
+            groupability = 0.05  # nearly one value per row: not a grouping
+        groupability -= 0.5 * (column.nullable_ratio or 0.0)
+        tier = (
+            priority.index(column.semantic_type)
+            if column.semantic_type in priority
+            else len(priority)
+        )
+        return (-groupability, tier)
+
+    dimensions.sort(key=rank)
     return dimensions
+
+
+ID_NAME_TOKENS = {"id", "ids", "code", "codes", "number", "no", "key", "uuid", "guid"}
+
+
+def _identity_column(ctx: PlanningContext) -> ColumnCtx | None:
+    """A per-row identity column (unique names, codes) can't be grouped, but
+    it carries exactly what a 'Top N by measure' list needs. Prefer human
+    labels ('Property') over machine codes ('Entity ID')."""
+    candidates = [
+        c
+        for c in ctx.columns
+        if c.role_hint in {"id", "dimension"}
+        and c.detected_type in {"id", "category", "text"}
+        and (c.unique_ratio or 0.0) >= 0.6
+    ]
+    candidates.sort(
+        key=lambda c: (
+            bool(set(_slug(c.name).split("_")) & ID_NAME_TOKENS),
+            -(c.unique_ratio or 0.0),
+        )
+    )
+    return candidates[0] if candidates else None
 
 
 def _primary_dimension(ctx: PlanningContext) -> ColumnCtx | None:
@@ -507,6 +552,27 @@ def _build_chart_widgets(ctx: PlanningContext) -> tuple[list[dict], list[dict]]:
         (c for c, _ in _ranked_summables(ctx) if measure is not None and c.name != measure.name),
         None,
     )
+    # Identity coverage: per-row keys (property names, customers, deal ids)
+    # can't be grouped, but they head a Top-N ranking — often the list an
+    # executive actually wants ('which properties carry the most AR?').
+    identity = _identity_column(ctx)
+    if identity is not None and measure is not None:
+        breakdown_widgets.append(
+            _chart_widget(
+                "w_chart_top_entities",
+                f"Top {identity.name} by {measure.name}"[:100],
+                "horizontal_bar",
+                {
+                    "tableId": ctx.table_id,
+                    "measures": metric_measures,
+                    "dimensions": [identity.name],
+                    "filters": [],
+                    "limit": 8,
+                },
+                size="md",
+            )
+        )
+
     if runner_up is not None and dimension:
         breakdown_widgets.append(
             _chart_widget(

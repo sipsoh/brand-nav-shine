@@ -162,6 +162,8 @@ def _run(db: Session, storage, dashboard: Dashboard, job: GenerationJob) -> None
                 detected_type=c.detected_type,
                 semantic_type=c.semantic_type,
                 role_hint=c.role_hint,
+                unique_ratio=float(c.unique_ratio) if c.unique_ratio is not None else None,
+                nullable_ratio=float(c.nullable_ratio) if c.nullable_ratio is not None else None,
             )
             for c in primary.columns
         ],

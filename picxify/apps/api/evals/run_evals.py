@@ -311,6 +311,9 @@ EXPECTATIONS = {
         "chart_dimensions_forbidden": ["Prepayments"],
         "forbid_time_series": True,
         "required_chart_measures": ["0-30 Days", "31-60 Days", "61-90 Days"],
+        # Dimension coverage: Operator (repeated business dimension) must be
+        # a grouping, and Property (per-row identity) must head a Top-N chart.
+        "required_chart_dimensions": ["Operator", "Property"],
     },
 }
 
@@ -458,6 +461,10 @@ def check(filename: str, spec: dict, expect: dict) -> list[str]:
             column in [m["column"] for m in qs.get("measures", [])] for qs in chart_specs
         ):
             problems.append(f"no chart uses measure {column!r} (column coverage)")
+
+    for column in expect.get("required_chart_dimensions", []):
+        if not any(column in (qs.get("dimensions") or []) for qs in chart_specs):
+            problems.append(f"no chart groups by {column!r} (dimension coverage)")
 
     for column in expect.get("chart_dimensions_forbidden", []):
         for query_spec in chart_specs:

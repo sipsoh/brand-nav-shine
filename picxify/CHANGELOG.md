@@ -1,5 +1,23 @@
 # Changelog
 
+## Dimension & identity coverage (2026-07-04, follow-up)
+
+The measure-coverage principle now applies to grouping columns too:
+
+- **Dimensions rank by groupability** — cardinality sweet spot (a handful of
+  repeated, well-populated values) first, keyword semantics as tiebreak. A
+  lineage column named 'Source File' no longer beats the real business
+  dimension ('Operator') just because 'source' matches a channel keyword.
+  ColumnCtx now carries unique/nullable ratios from the profiler to make
+  that call.
+- **Identity columns get a Top-N chart.** Per-row keys (property names,
+  customers, donors) can't be grouped, so they used to vanish entirely; now
+  the best identity column (human labels preferred over machine codes, so
+  'Property' beats 'Entity ID') heads a "Top X by [measure]" ranking —
+  usually the list an executive actually wants.
+- Eval harness gained a `required_chart_dimensions` coverage check;
+  208 tests (3 new); 38/38 evals.
+
 ## Column coverage: keywords rank, they never gate (2026-07-04)
 
 Architectural change to dashboard planning, prompted by the same real

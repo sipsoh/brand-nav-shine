@@ -147,3 +147,47 @@ def test_column_totals_bar_transposes_and_keeps_order():
     # Reversed so the first bucket renders at the top of the chart.
     assert option["yAxis"]["data"] == ["61-90 Days", "31-60 Days", "0-30 Days"]
     assert option["series"][0]["data"] == [200.0, 830.0, 5400.0]
+
+
+def _ctx_with_identity() -> PlanningContext:
+    ctx = _ctx()
+    ctx.columns = [
+        ColumnCtx("Operator", "category", "other", "dimension",
+                  unique_ratio=0.15, nullable_ratio=0.0),
+        ColumnCtx("Property", "id", "id", "id", unique_ratio=1.0, nullable_ratio=0.0),
+        ColumnCtx("Entity ID", "category", "other", "dimension",
+                  unique_ratio=0.93, nullable_ratio=0.05),
+        ColumnCtx("Source File", "category", "channel", "dimension",
+                  unique_ratio=0.44, nullable_ratio=0.0),
+        *[c for c in ctx.columns if c.role_hint == "measure"],
+    ]
+    return ctx
+
+
+def test_groupability_outranks_channel_keyword():
+    # 'Source File' matches the channel keyword but has ~52 distinct values;
+    # 'Operator' has a handful of repeated values. Data beats keywords.
+    from app.services.dashboard_planner import _ranked_dimensions
+
+    ranked = [c.name for c in _ranked_dimensions(_ctx_with_identity())]
+    assert ranked[0] == "Operator"
+    assert ranked.index("Entity ID") > ranked.index("Source File")
+
+
+def test_identity_column_prefers_names_over_codes():
+    from app.services.dashboard_planner import _identity_column
+
+    identity = _identity_column(_ctx_with_identity())
+    assert identity is not None and identity.name == "Property"
+
+
+def test_fallback_spec_includes_top_entities_chart():
+    spec = build_fallback_spec(_ctx_with_identity())
+    charts = {
+        w["title"]: w["chart"]["querySpec"]
+        for s in spec["sections"]
+        for w in s["widgets"]
+        if w["type"] == "chart"
+    }
+    assert any(qs.get("dimensions") == ["Property"] for qs in charts.values())
+    assert any(qs.get("dimensions") == ["Operator"] for qs in charts.values())
