@@ -5,6 +5,7 @@ generatedBy="code". The LLM never touches these numbers — later milestones onl
 narrate them.
 """
 
+import re
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -21,6 +22,50 @@ DIMENSION_PRIORITY = ["campaign", "channel", "stage", "status", "segment", "regi
 STRONG_SEMANTICS = {"revenue", "cost", "money", "conversion", "engagement", "quantity"}
 # Measures that are only meaningful as averages.
 AVERAGE_SEMANTICS = {"duration", "rating"}
+
+# Coverage rule: EVERY numeric measure gets a total fact unless summing it is
+# provably meaningless. Keyword recognition boosts a column's rank later in
+# the planner — it must never decide whether the column is represented at all
+# (a dataset's most important columns are often ones no keyword list knows,
+# e.g. AR aging buckets '0-30 Days'..'180+ Days').
+#
+# Intensive quantities (rates, ratios, percents, per-unit prices, averages)
+# describe a level, not an amount — their sums are nonsense, so they are the
+# exclusions. Everything else numeric is summable.
+INTENSIVE_NAME_TOKENS = re.compile(
+    r"(^|_)(rate|rates|ratio|ratios|pct|percent|avg|average|mean|median)($|_)"
+    r"|unit_price|price_per|unit_cost|rate_per|per_unit"
+)
+YEAR_NAME_TOKENS = re.compile(r"(^|_)(year|yr)s?($|_)")
+OHLC_NAMES = {"open", "high", "low", "close"}
+
+
+def _is_summable(df: pd.DataFrame, column: "ColumnMeta", all_slugs: set[str]) -> bool:
+    if column.role_hint != "measure":
+        return False
+    if column.detected_type == "percent" or column.semantic_type in AVERAGE_SEMANTICS:
+        return False
+    slug = _slug(column.name)
+    if INTENSIVE_NAME_TOKENS.search(slug) or YEAR_NAME_TOKENS.search(slug):
+        return False
+    # OHLC price candles: levels, not amounts.
+    if slug in OHLC_NAMES and len(OHLC_NAMES & all_slugs) >= 3:
+        return False
+    series = df[column.name].dropna() if column.name in df.columns else pd.Series(dtype=float)
+    if series.empty or not pd.api.types.is_numeric_dtype(series):
+        return False
+    # Data-driven year guard ('Year Built', 'FY'): integers confined to a
+    # calendar-year range are ordinals, not amounts. The span check keeps a
+    # coincidental amount column ($1,500–$2,200) from tripping it.
+    values = series.astype(float)
+    if (
+        (values % 1 == 0).all()
+        and values.min() >= 1500
+        and values.max() <= 2200
+        and values.max() - values.min() <= 500
+    ):
+        return False
+    return True
 TOP_CONTRIBUTOR_THRESHOLD = 0.30
 OUTLIER_ROBUST_Z = 3.5
 MAX_DIMENSION_PAIRS = 3
@@ -158,15 +203,18 @@ def _overview_facts(df, table_id, measures: list[ColumnMeta], result: InsightRes
             ),
         )
     )
+    all_slugs = {_slug(m.name) for m in measures}
     for measure in measures:
         series = df[measure.name].dropna()
         if series.empty:
             continue
-        if measure.semantic_type in STRONG_SEMANTICS:
+        if _is_summable(df, measure, all_slugs):
+            name = measure.name
+            label = name if name.lower().startswith("total") else f"Total {name}"
             result.facts.append(
                 ComputedFact(
                     id=f"fact_total_{_slug(measure.name)}",
-                    label=f"Total {measure.name}",
+                    label=label,
                     value=round(float(series.sum()), 4),
                     unit=_unit_for(measure),
                     source_trace=SourceTrace(

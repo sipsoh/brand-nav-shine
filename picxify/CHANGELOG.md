@@ -1,5 +1,45 @@
 # Changelog
 
+## Column coverage: keywords rank, they never gate (2026-07-04)
+
+Architectural change to dashboard planning, prompted by the same real
+AR-aging report: the planner used to pick ONE keyword-recognized measure and
+build the entire dashboard from it — the report's seven aging-bucket columns
+('0-30 Days'..'180+ Days'), 'Total AR' (the actual headline), and
+'Prepayments' were parsed correctly and then silently dropped. Any keyword
+detector fix would just fail on the next unrecognized dataset, so the rule is
+now structural:
+
+- **Every numeric measure gets a computed total** unless summing it is
+  provably meaningless. The insight engine is the single source of truth for
+  summability, with data-first exclusions: intensive quantities (rates,
+  ratios, percents, per-unit prices — levels, not amounts), rating/duration
+  semantics (average-only), OHLC price candles, calendar-year columns
+  (name token or integer values confined to a year range), all-null columns.
+- **Semantics boost rank; they never gate inclusion.** Headline ordering is
+  recognized-semantic tier first, then total magnitude. The hero row now
+  shows the top 3 totals (so 'Total AR' at 6.1M appears beside 'Credits');
+  the second-ranked measure gets its own breakdown chart. Negligible
+  unclassified columns (>1000x smaller than the leader, e.g. a probability
+  column beside deal amounts) stay out of headlines.
+- **Sibling column groups are detected structurally** — >=3 summable columns
+  sharing a name token ('0-30 Days'/'31-60 Days'/... share 'days';
+  'Q1 Revenue'/'Q2 Revenue' share 'revenue') — and charted as a
+  totals-per-column bar in original column order, since column order encodes
+  bucket order. No domain keyword list involved, so it generalizes to
+  layouts nobody anticipated.
+- Chart executor + builder support the new shape: a multi-measure,
+  zero-dimension horizontal bar transposes the single aggregate row into one
+  bar per column.
+- Corpus-wide effect (all 38 eval fixtures still pass): financial statements
+  now surface Net Income and Operating Expenses beside Revenue; bank
+  statements show Credit, Debit, and Balance; real-estate shows Units and
+  Sq Ft while 'Year Built' stays excluded; analytics shows Pageviews and
+  Sessions while 'Bounce Rate' stays excluded. Every forbidden-aggregation
+  guard (Unit Price, OHLC, ratings, percent rates, all-null formula columns)
+  holds. 205 tests (7 new); eval harness gained a `required_chart_measures`
+  coverage check.
+
 ## Two planner bugs from a real AR-aging report (2026-07-04)
 
 Found by generating a dashboard from a real facility AR-aging export and

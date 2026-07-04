@@ -118,8 +118,19 @@ Sheets are read as raw cell grids (`header=None`) and reconstructed:
 - Any column whose values carry a currency symbol is a **money measure** even
   with an unrecognized name — semantic `money` is neutral: it counts as a
   strong measure but never implies "sales" for use-case detection.
-- Durations and ratings are averaged, never summed; without a strong measure,
-  analytics count records instead of summing arbitrary numbers.
+- Durations and ratings are averaged, never summed; when nothing at all is
+  summable, analytics count records instead of summing arbitrary numbers.
+- **Column coverage — keywords rank, they never gate.** Every numeric measure
+  gets a computed total and dashboard representation unless summing it is
+  provably meaningless (rates/ratios/percents/per-unit prices are levels, not
+  amounts; ratings/durations average; OHLC candles are prices; calendar-year
+  columns are ordinals; all-null columns are skipped). Recognized semantics
+  decide headline ORDER — tier first, then total magnitude — so a report's
+  real headline surfaces even when no keyword rule knows its name
+  ('Total AR' on an AR-aging export). Sibling column groups (≥3 summable
+  columns sharing a name token: '0-30 Days'…'180+ Days', 'Q1 Revenue'…'Q4
+  Revenue') are detected structurally and charted as totals-per-column bars
+  in original column order.
 
 ## PDF ingestion
 

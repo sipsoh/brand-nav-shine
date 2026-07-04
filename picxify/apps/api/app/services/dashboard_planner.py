@@ -138,15 +138,78 @@ def _columns_by_role(ctx: PlanningContext, role: str) -> list[ColumnCtx]:
 # Ratings and durations are explicitly absent — they are averaged, never summed.
 STRONG_MEASURE_PRIORITY = ["revenue", "cost", "money", "conversion", "engagement", "quantity"]
 
+# Name tokens too generic to define a sibling group ('Total AR' and
+# 'Total Spend' sharing 'total' are not siblings the way '0-30 Days' and
+# '31-60 Days' sharing 'days' are).
+GROUP_STOP_TOKENS = {"total", "sum", "amount", "value", "count", "num", "number", "the", "and"}
+
+
+def _summable_pairs(ctx: PlanningContext) -> list[tuple[ColumnCtx, dict]]:
+    """Every measure column the insight engine judged summable, paired with
+    its computed total fact, in original column order. This is the coverage
+    set: each of these must be represented on the dashboard somewhere."""
+    facts = {f["id"]: f for f in ctx.facts if str(f.get("id", "")).startswith("fact_total_")}
+    pairs = []
+    for column in _columns_by_role(ctx, "measure"):
+        fact = facts.get(f"fact_total_{_slug(column.name)}")
+        if fact is not None and isinstance(fact.get("value"), (int, float)):
+            pairs.append((column, fact))
+    return pairs
+
+
+def _ranked_summables(ctx: PlanningContext) -> list[tuple[ColumnCtx, dict]]:
+    """Summable measures ranked for headline use: recognized business
+    semantics first (in priority order), then unclassified measures by total
+    magnitude. Semantics BOOST rank; they never gate inclusion. Unclassified
+    measures whose totals are negligible next to the leader (>1000x smaller,
+    e.g. a stray 0-1 probability column beside deal amounts) are dropped from
+    headline consideration — they remain available to sibling groups."""
+    pairs = list(_summable_pairs(ctx))
+
+    def rank(pair: tuple[ColumnCtx, dict]):
+        column, fact = pair
+        tier = (
+            STRONG_MEASURE_PRIORITY.index(column.semantic_type)
+            if column.semantic_type in STRONG_MEASURE_PRIORITY
+            else len(STRONG_MEASURE_PRIORITY)
+        )
+        return (tier, -abs(float(fact["value"])))
+
+    pairs.sort(key=rank)
+    if pairs:
+        top = max(abs(float(fact["value"])) for _, fact in pairs) or 1.0
+        pairs = [
+            (column, fact)
+            for column, fact in pairs
+            if column.semantic_type in STRONG_MEASURE_PRIORITY
+            or abs(float(fact["value"])) >= top / 1000
+        ]
+    return pairs
+
+
+def _sibling_group(ctx: PlanningContext) -> tuple[str, list[ColumnCtx]]:
+    """Detect a set of >=3 summable columns that together form one series —
+    aging buckets ('0-30 Days'..'180+ Days'), quarter columns ('Q1 Revenue',
+    'Q2 Revenue'), size bands — via a shared name token. Purely structural:
+    no domain keyword list, so it generalizes to columns nobody anticipated.
+    Returns (token, columns in original column order) or ("", [])."""
+    groups: dict[str, list[ColumnCtx]] = {}
+    for column, _ in _summable_pairs(ctx):
+        for token in sorted(set(_slug(column.name).split("_"))):
+            if len(token) >= 3 and not token.isdigit() and token not in GROUP_STOP_TOKENS:
+                groups.setdefault(token, []).append(column)
+    if not groups:
+        return "", []
+    token, members = max(groups.items(), key=lambda item: len(item[1]))
+    return (token, members) if len(members) >= 3 else ("", [])
+
 
 def _primary_measure(ctx: PlanningContext) -> ColumnCtx | None:
-    """The measure worth summing. Durations and unclassified numerics are
-    excluded — without a strong measure the dashboard counts records instead."""
-    measures = [
-        c for c in _columns_by_role(ctx, "measure") if c.semantic_type in STRONG_MEASURE_PRIORITY
-    ]
-    measures.sort(key=lambda c: STRONG_MEASURE_PRIORITY.index(c.semantic_type))
-    return measures[0] if measures else None
+    """The headline measure. Recognized semantics win; otherwise the largest
+    summable column. Only when nothing is summable at all does the dashboard
+    fall back to counting records."""
+    ranked = _ranked_summables(ctx)
+    return ranked[0][0] if ranked else None
 
 
 def _average_measure(ctx: PlanningContext) -> ColumnCtx | None:
@@ -263,13 +326,17 @@ def _hero_section(ctx: PlanningContext) -> dict | None:
     if row_fact:
         widgets.append(_kpi_widget("w_kpi_rows", "Rows analyzed", row_fact))
 
-    measure = _primary_measure(ctx)
-    if measure:
-        total_fact = _fact_by_prefix(ctx, f"fact_total_{_slug(measure.name)}")
-        if total_fact:
-            widgets.append(
-                _kpi_widget("w_kpi_total", f"Total {measure.name}"[:100], total_fact)
+    # Top-ranked summable totals — the primary plus runners-up, so a report's
+    # real headline number appears even when it isn't the keyword-recognized
+    # column (e.g. 'Total AR' next to 'Credits' on an AR aging report).
+    for index, (measure, total_fact) in enumerate(_ranked_summables(ctx)[:3]):
+        widgets.append(
+            _kpi_widget(
+                f"w_kpi_total_{index}" if index else "w_kpi_total",
+                total_fact["label"][:100],
+                total_fact,
             )
+        )
 
     average = _average_measure(ctx)
     if average:
@@ -393,6 +460,28 @@ def _build_chart_widgets(ctx: PlanningContext) -> tuple[list[dict], list[dict]]:
             )
         )
 
+    # A sibling column group (aging buckets, quarter columns, size bands) IS
+    # the point of a report shaped that way — chart the group's totals side
+    # by side, in original column order (the order encodes the bucket order).
+    group_token, group = _sibling_group(ctx)
+    if group:
+        breakdown_widgets.append(
+            _chart_widget(
+                "w_chart_column_group",
+                f"Totals across the '{group_token}' columns"[:100],
+                "horizontal_bar",
+                {
+                    "tableId": ctx.table_id,
+                    "measures": [
+                        {"column": c.name, "aggregation": "sum", "alias": c.name} for c in group
+                    ],
+                    "dimensions": [],
+                    "filters": [],
+                },
+                size="md",
+            )
+        )
+
     if dimension:
         # Magnitude comparison across nominal categories -> single-hue bars
         # (a donut is for part-to-whole at a glance, not comparing values).
@@ -404,6 +493,31 @@ def _build_chart_widgets(ctx: PlanningContext) -> tuple[list[dict], list[dict]]:
                 {
                     "tableId": ctx.table_id,
                     "measures": metric_measures,
+                    "dimensions": [dimension.name],
+                    "filters": [],
+                    "limit": 8,
+                },
+                size="md",
+            )
+        )
+
+    # Coverage: the second-ranked summable measure gets its own breakdown, so
+    # a dashboard is never single-measure when the data isn't.
+    runner_up = next(
+        (c for c, _ in _ranked_summables(ctx) if measure is not None and c.name != measure.name),
+        None,
+    )
+    if runner_up is not None and dimension:
+        breakdown_widgets.append(
+            _chart_widget(
+                "w_chart_breakdown_b",
+                f"{runner_up.name} by {dimension.name}",
+                "horizontal_bar",
+                {
+                    "tableId": ctx.table_id,
+                    "measures": [
+                        {"column": runner_up.name, "aggregation": "sum", "alias": runner_up.name}
+                    ],
                     "dimensions": [dimension.name],
                     "filters": [],
                     "limit": 8,

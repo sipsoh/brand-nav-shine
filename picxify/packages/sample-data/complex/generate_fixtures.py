@@ -889,6 +889,7 @@ def ar_aging_snapshot() -> None:
                 "Period": "May 2026",
                 "0-30 Days": round(random.uniform(2_000, 40_000), 2),
                 "31-60 Days": round(random.uniform(0, 15_000), 2),
+                "61-90 Days": round(random.uniform(0, 8_000), 2),
                 "Prepayments": round(random.uniform(0, 30_000), 2),
                 "Credits": round(random.uniform(0, 20_000), 2),
                 "Total AR": round(random.uniform(5_000, 90_000), 2),

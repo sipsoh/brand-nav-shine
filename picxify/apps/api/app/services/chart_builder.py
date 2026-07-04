@@ -35,6 +35,18 @@ def build_echarts_option(chart_type: str, result: QueryResult, query_spec: dict)
     if not result.rows:
         raise ChartBuildError("Query returned no data.")
 
+    # Multi-measure aggregate with nothing to group by: one bar per COLUMN
+    # (sibling-group totals such as aging buckets). The single result row is
+    # transposed; input order is preserved because it encodes bucket order.
+    if (
+        chart_type == "horizontal_bar"
+        and not (query_spec.get("dimensions") or [])
+        and not query_spec.get("dateColumn")
+        and len(result.rows) == 1
+        and len(result.columns) >= 2
+    ):
+        return _column_totals_bar(result)
+
     category_column = _category_column(query_spec, result)
     measure_columns = [c for c in result.columns if c != category_column]
     if not measure_columns:
@@ -260,6 +272,39 @@ def _horizontal_bar(result, category_column, measure) -> dict:
     option["grid"]["right"] = 56  # room for tip labels
     option["series"] = [
         _bar_series(measure, [r.get(measure) for r in rows], horizontal=True, tip_labels=True)
+    ]
+    return option
+
+
+def _column_totals_bar(result) -> dict:
+    """One bar per column from a transposed single-row aggregate — magnitude
+    comparison across nominal categories, so single hue with tip labels,
+    exactly like _horizontal_bar."""
+    row = result.rows[0]
+    entries = [
+        (name, row.get(name))
+        for name in result.columns
+        if isinstance(row.get(name), (int, float))
+    ]
+    if len(entries) < 2:
+        raise ChartBuildError("Not enough numeric totals to compare columns.")
+    entries.reverse()  # echarts draws the first category at the bottom
+    option = _base()
+    option["tooltip"] = {"trigger": "item"}
+    value_axis = _value_axis()
+    value_axis["axisLabel"] = {"show": False}
+    value_axis["splitLine"] = {"show": False}
+    option["xAxis"] = value_axis
+    category_axis = _category_axis([name for name, _ in entries])
+    category_axis["axisLabel"] = {
+        **category_axis["axisLabel"],
+        "width": 200,
+        "overflow": "truncate",
+    }
+    option["yAxis"] = category_axis
+    option["grid"]["right"] = 56  # room for tip labels
+    option["series"] = [
+        _bar_series("Total", [value for _, value in entries], horizontal=True, tip_labels=True)
     ]
     return option
 

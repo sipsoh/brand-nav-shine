@@ -300,13 +300,17 @@ EXPECTATIONS = {
         # time series) and has a 'Prepayments' currency column whose name
         # contains the substring 'rep'. Neither must corrupt the dashboard:
         # no fake "over time" chart, and Prepayments must never become a
-        # group-by dimension.
+        # group-by dimension. Coverage: the sibling aging-bucket columns
+        # ('0-30 Days'..'61-90 Days') must be charted, and 'Total AR' — the
+        # report's real headline, unknown to every keyword list — must be a
+        # KPI. Keywords may rank columns; they must never gate them.
         "use_case": None,
         "primary_sheet": "AR Aging",
-        "required_kpi_tokens": ["rows analyzed"],
+        "required_kpi_tokens": ["rows analyzed", "total ar"],
         "chart_aggregations_forbidden": [],
         "chart_dimensions_forbidden": ["Prepayments"],
         "forbid_time_series": True,
+        "required_chart_measures": ["0-30 Days", "31-60 Days", "61-90 Days"],
     },
 }
 
@@ -448,6 +452,12 @@ def check(filename: str, spec: dict, expect: dict) -> list[str]:
             for measure in query_spec.get("measures", []):
                 if measure["column"] == column and measure["aggregation"] == aggregation:
                     problems.append(f"chart uses forbidden {aggregation}({column})")
+
+    for column in expect.get("required_chart_measures", []):
+        if not any(
+            column in [m["column"] for m in qs.get("measures", [])] for qs in chart_specs
+        ):
+            problems.append(f"no chart uses measure {column!r} (column coverage)")
 
     for column in expect.get("chart_dimensions_forbidden", []):
         for query_spec in chart_specs:
