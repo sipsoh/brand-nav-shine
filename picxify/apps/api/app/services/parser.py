@@ -635,20 +635,22 @@ def extract_tables(sheet_name: str, grid: pd.DataFrame) -> list[RawTable]:
     """Split a raw sheet grid into tables: vertical blocks separated by >= 2
     blank rows, then side-by-side blocks separated by fully blank columns,
     then header detection within each block."""
-    blocks = []
+    blocks: list[tuple[pd.DataFrame, tuple[int, int]]] = []
     for row_lo, row_hi in _vertical_blocks(grid):
         band = grid.iloc[row_lo:row_hi]
         for col_lo, col_hi in _horizontal_blocks(band):
-            blocks.extend(_split_on_new_header(band.iloc[:, col_lo:col_hi]))
+            for piece in _split_on_new_header(band.iloc[:, col_lo:col_hi]):
+                blocks.append((piece, (col_lo, col_hi)))
 
-    candidates: list[tuple[pd.DataFrame, list[TransformNote]]] = []
+    spanned: list[tuple[pd.DataFrame, list[TransformNote], tuple[int, int]]] = []
     skipped_small = 0
-    for block in blocks:
+    for block, span in blocks:
         built = _table_from_block(block)
         if built is None:
             skipped_small += 1
             continue
-        candidates.append(built)
+        spanned.append((*built, span))
+    candidates = _merge_continuation_blocks(spanned)
 
     if not candidates:
         # Nothing qualified (e.g. a sheet holding one KPI cell): fall back to
@@ -690,6 +692,73 @@ def extract_tables(sheet_name: str, grid: pd.DataFrame) -> list[RawTable]:
             )
         tables.append(RawTable(name=name, dataframe=dataframe, notes=notes))
     return tables
+
+
+def _merge_continuation_blocks(
+    spanned: list[tuple[pd.DataFrame, list[TransformNote], tuple[int, int]]],
+) -> list[tuple[pd.DataFrame, list[TransformNote]]]:
+    """Repair page-break artifacts: report generators (Yardi, page-broken
+    exports) leave a wide blank gap MID-TABLE, splitting one statement into a
+    headered block and a headerless tail. A later block is a CONTINUATION of
+    the one above iff it has no detected header (a deliberate new table
+    announces itself with one), sits in the same sheet column span with the
+    same width, and every column position is type-kind-compatible. It then
+    inherits the previous block's columns — and sheds its no_header_detected
+    warning, since the header was found, just further up the sheet."""
+
+    def column_kinds(df: pd.DataFrame) -> list[str | None]:
+        kinds: list[str | None] = []
+        for i in range(df.shape[1]):
+            series = df.iloc[:, i].dropna()
+            if series.empty:
+                kinds.append(None)
+            elif pd.api.types.is_numeric_dtype(series):
+                kinds.append("num")
+            elif all(isinstance(v, str) for v in series):
+                kinds.append("str")
+            else:
+                kinds.append("other")
+        return kinds
+
+    def is_continuation(prev, cont) -> bool:
+        prev_df, prev_notes, prev_span = prev
+        cont_df, cont_notes, cont_span = cont
+        if not any(n.finding_type == "no_header_detected" for n in cont_notes):
+            return False
+        if any(n.finding_type == "table_transposed" for n in prev_notes + cont_notes):
+            return False
+        if cont_span != prev_span or cont_df.shape[1] != prev_df.shape[1]:
+            return False
+        return all(
+            a is None or b is None or a == b
+            for a, b in zip(column_kinds(prev_df), column_kinds(cont_df))
+        )
+
+    merged: list[tuple[pd.DataFrame, list[TransformNote], tuple[int, int]]] = []
+    for candidate in spanned:
+        if merged and is_continuation(merged[-1], candidate):
+            prev_df, prev_notes, prev_span = merged[-1]
+            cont_df = candidate[0].set_axis(prev_df.columns, axis=1)
+            merged[-1] = (
+                pd.concat([prev_df, cont_df], ignore_index=True),
+                prev_notes
+                + [
+                    TransformNote(
+                        finding_type="continuation_block_merged",
+                        severity="info",
+                        message=(
+                            "A blank-row-separated block with no header row matched "
+                            "the table above and was treated as a continuation "
+                            f"({len(cont_df)} rows appended)."
+                        ),
+                        meta={"rows": int(len(cont_df))},
+                    )
+                ],
+                prev_span,
+            )
+        else:
+            merged.append(candidate)
+    return [(df, notes) for df, notes, _ in merged]
 
 
 def _vertical_blocks(grid: pd.DataFrame) -> list[tuple[int, int]]:
@@ -877,25 +946,25 @@ def _table_from_block(block: pd.DataFrame) -> tuple[pd.DataFrame, list[Transform
                     meta={"row": header_rows[0] + 1},
                 )
             )
-        unnamed = [c for c in columns if c.startswith("column_")]
-        if unnamed:
-            notes.append(
-                TransformNote(
-                    finding_type="blank_headers_named",
-                    severity="info",
-                    message=f"Named {len(unnamed)} blank header cell(s): {', '.join(unnamed)}.",
-                    meta={"columns": unnamed},
-                )
-            )
         data = block.iloc[header_rows[-1] + 1 :]
 
-    # A blank header over the leading label column ("" | Jan | Feb | ...) is
-    # the classic accounting-export shape; "Category" reads better than
-    # "column_1" everywhere downstream.
-    if columns[0] == "column_1":
-        leading = [v for v in data.iloc[:, 0].tolist() if not pd.isna(v)]
-        if leading and all(isinstance(v, str) for v in leading):
-            columns[0] = "Category"
+    # Blank headers over the LEADING label columns ("" | "" | Jan | Feb | ...)
+    # are the classic accounting-export shape. Name them from content —
+    # uniform short digit-bearing tokens are a 'Code' (account/SKU/GL codes),
+    # word-like labels get 'Category' then 'Description' — so auto-names like
+    # 'column_2' never reach chart titles or the coverage ledger.
+    unnamed_positions = [i for i, c in enumerate(columns) if c.startswith("column_")]
+    _name_leading_label_columns(columns, data)
+    if header_rows is not None and unnamed_positions:
+        final = [columns[i] for i in unnamed_positions]
+        notes.append(
+            TransformNote(
+                finding_type="blank_headers_named",
+                severity="info",
+                message=f"Named {len(final)} blank header cell(s): {', '.join(final)}.",
+                meta={"columns": final},
+            )
+        )
 
     data = data.reset_index(drop=True)
     if len(data) > 0 and _is_units_row(data.iloc[0]):
@@ -1053,6 +1122,32 @@ def _clean_header_text(text: str) -> str:
     read the same as a plain 'Q1 Revenue' everywhere downstream (dashboard
     titles, chart labels, snake_case column matching)."""
     return re.sub(r"\s+", " ", text).strip()
+
+
+# Short uniform tokens like '4010-0000', 'SKU-12', 'GL_400' — identifier
+# columns, not descriptive labels.
+CODE_LIKE = re.compile(r"^[A-Za-z0-9]{1,6}([-_./][A-Za-z0-9]{1,6}){0,3}$")
+
+
+def _name_leading_label_columns(columns: list[str], data: pd.DataFrame) -> None:
+    """Content-based names for the LEADING run of auto-named text columns.
+    Uniform digit-bearing tokens -> 'Code'; word-like labels -> 'Category',
+    then 'Description'. Stops at the first named, non-text, or mixed column,
+    so ordinary data columns are never touched. Mutates `columns` in place."""
+    label_names = iter(["Category", "Description"])
+    for index, name in enumerate(columns):
+        if not str(name).startswith("column_"):
+            break
+        values = data.iloc[:, index].dropna().tolist()
+        if not values or not all(isinstance(v, str) for v in values):
+            break
+        code_ratio = sum(
+            1 for v in values if CODE_LIKE.match(v.strip()) and any(ch.isdigit() for ch in v)
+        ) / len(values)
+        new_name = "Code" if code_ratio >= 0.8 else next(label_names, None)
+        if new_name is None or new_name in columns:
+            break
+        columns[index] = new_name
 
 
 def _header_cell(value, index: int) -> str:

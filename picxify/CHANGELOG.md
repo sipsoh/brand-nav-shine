@@ -1,5 +1,46 @@
 # Changelog
 
+## Financial-statement class: page breaks, label-column subtotals, code/name pairs (2026-07-05)
+
+Driven by a real Yardi 12-month accrual statement (502 rows: banner block,
+blank-headed account-code + name label pair, 12 month columns + Total,
+multi-level subtotals, statistical accounts, and a page-break artifact).
+Four engine changes, each structural rather than file-specific:
+
+- **Continuation-block merge** (`parser.extract_tables`): a blank-gap block
+  with NO detected header, the same sheet column span/width, and
+  type-compatible columns is a page-break continuation of the table above —
+  it inherits that header instead of surfacing as a headerless low-confidence
+  fragment. The real statement's 357 expense/NOI rows had been silently
+  built into a second table the dashboard never used; it now parses as ONE
+  495-row table and structure confidence rises 0.78 → 0.86.
+- **Subtotals verified, in any label column** (`normalization`): footer/total
+  detection previously read only the FIRST column, so 'TOTAL REVENUE' rows
+  labeled in the second column (codes in the first) survived and
+  double-counted — the dashboard's 9.9M "Total Value" was ~44% subtotal
+  inflation. Now any label column is scanned, and a plain 'Total …' row is
+  dropped only when its numbers PROVE it (column-wise ±prefix-sum match, so
+  expense sections shown sign-flipped verify too); derived lines (Net
+  Income, Net Operating Income, Grand Total) drop on label. Unprovable
+  matches stay — the statement's statistical 'Total Census' / 'Total
+  Occupancy %' rows are real data and survive. Bare-integer GL code columns
+  are recognized as identifiers so they can't block verification.
+- **Content-based names for blank label headers** (`parser`): the leading
+  run of unnamed text columns is named from its values — uniform digit-
+  bearing tokens become 'Code', word-like labels 'Category' then
+  'Description' — so auto-names like 'column_2' never reach chart titles,
+  and descriptive columns outrank identifier columns as chart groupings.
+- **Stacked-series cardinality guard** (planner): the "over time by X"
+  stacked chart is only planned when the dimension has few distinct values;
+  a 434-account dimension used to truncate at the query row cap and render
+  an empty junk chart. Top-N breakdowns cover high-cardinality dimensions.
+
+New fixture `yardi_12_month_statement.xlsx` exercises the whole arc
+(split → merge → verified subtotal drops → statistical rows kept → Code/
+Category naming → unpivoted monthly trend). 219 tests (6 new); 39/39 evals;
+verified end-to-end in the browser on the real statement: one table, 4/4
+column coverage, honest 12-month trend, account-name breakdowns.
+
 ## The coverage contract: enforced, not hoped for (2026-07-04)
 
 The architectural close of the coverage arc

@@ -295,6 +295,20 @@ EXPECTATIONS = {
         "required_kpi_tokens": ["rows analyzed"],
         "chart_aggregations_forbidden": [],
     },
+    "yardi_12_month_statement.xlsx": {
+        # Property-management 12-month accrual statement: banner block, TWO
+        # blank label header cells (named Code/Category from content), a
+        # 2-blank-row page-break artifact mid-table (continuation merge must
+        # keep it ONE table), account-code + name label pair, multi-level
+        # subtotals (TOTAL REVENUE / TOTAL OPERATING EXPENSES / NET OPERATING
+        # INCOME must drop; the statistical 'Total Census' row must stay),
+        # month columns + Total column unpivoted to a real monthly trend.
+        "use_case": None,
+        "primary_sheet": "Report1",
+        "required_kpi_tokens": ["total value"],
+        "chart_aggregations_forbidden": [],
+        "required_chart_dimensions": ["Category"],
+    },
     "ar_aging_snapshot.xlsx": {
         # Every row shares one 'Period' (a single-month snapshot, not a
         # time series) and has a 'Prepayments' currency column whose name

@@ -10,7 +10,15 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 FOOTER_PATTERN = re.compile(
-    r"^\s*((grand\s+)?(sub)?total[s]?\b|net\s+(income|profit|loss|revenue)\b)", re.IGNORECASE
+    r"^\s*((grand\s+)?(sub)?total[s]?\b|net\s+(operating\s+)?(income|profit|loss|revenue|earnings)\b)",
+    re.IGNORECASE,
+)
+# Lines that are differences/rollups rather than sums of the rows above them
+# (Net Income = income - expenses). They can't be verified by prefix-summing,
+# but the label alone is unambiguous enough to drop.
+DERIVED_LINE_PATTERN = re.compile(
+    r"^\s*(grand\s+total[s]?\b|net\s+(operating\s+)?(income|profit|loss|revenue|earnings)\b)",
+    re.IGNORECASE,
 )
 # Covers "$1,234.56", "-$1,234", accounting negatives "($1,234.56)", and
 # Swiss apostrophe thousands ("$1'234.56").
@@ -154,31 +162,135 @@ def _dedupe_columns(df: pd.DataFrame, notes: list[TransformNote]) -> pd.DataFram
     return df
 
 
+def _footer_number(value):
+    """Best-effort numeric read used only for subtotal VERIFICATION — never
+    mutates data. Handles $/€/£, thousands separators, %, accounting
+    parentheses, and SAP trailing minus. Unparseable -> None."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+    text = value.replace("−", "-").strip()
+    negative = bool(re.match(r"^\(.*\)$", text))
+    if text.endswith("-") and not text.startswith("-"):
+        negative, text = True, text[:-1]
+    cleaned = re.sub(r"[$€£,'%\s()]", "", text)
+    if cleaned in {"", "-"}:
+        return None
+    try:
+        number = float(cleaned)
+    except ValueError:
+        return None
+    return -number if negative else number
+
+
 def _drop_footer_rows(df: pd.DataFrame, notes: list[TransformNote]) -> pd.DataFrame:
     """Total/subtotal rows double-count their detail rows wherever they sit —
     financial statements carry them mid-table ('Total Income'), not just at
-    the bottom."""
+    the bottom — and the label can live in ANY label column (account-code
+    exports keep codes in column 1 and the 'TOTAL REVENUE' text in column 2).
+
+    A plain 'Total …' label is dropped only when the numbers PROVE it: the
+    row must equal the column-wise sum (or negated sum — expense sections are
+    often shown sign-flipped) of a contiguous run of detail rows above it.
+    Derived lines (Net Income, Grand Total) are differences/rollups, so they
+    drop on label alone. Unprovable matches are KEPT — statistical accounts
+    like 'Total Census' or 'Total Occupancy %' are real data, and a genuine
+    account whose name merely contains 'total' must never be destroyed."""
     if df.empty:
         return df
-    first_column = df.columns[0]
-    mask = df[first_column].map(
-        lambda v: isinstance(v, str) and bool(FOOTER_PATTERN.match(v))
+
+    label_columns = []
+    for column in df.columns:
+        if not _is_text_dtype(df[column]):
+            continue
+        strings = [v for v in df[column].dropna() if isinstance(v, str)]
+        if not strings:
+            continue
+        parseable = sum(1 for v in strings if _footer_number(v) is not None)
+        # Digit-only near-unique text tokens are identifiers (bare GL/account
+        # numbers like '4010'), not measures — they must not join the
+        # verification matrix, or the code cell blocks every match.
+        digit_only = sum(1 for v in strings if re.fullmatch(r"\d+", v.strip()))
+        near_unique = len(set(strings)) / len(strings) >= 0.9
+        if parseable / len(strings) < 0.5 or (
+            digit_only / len(strings) >= 0.9 and near_unique
+        ):
+            label_columns.append(column)
+    if not label_columns:
+        return df
+
+    def row_label(row) -> str | None:
+        for column in label_columns:
+            value = row[column]
+            if isinstance(value, str) and FOOTER_PATTERN.match(value):
+                return value
+        return None
+
+    candidates = df.apply(row_label, axis=1).dropna()
+    if candidates.empty:
+        return df
+
+    value_columns = [c for c in df.columns if c not in label_columns]
+    numeric = pd.DataFrame(
+        {c: df[c].map(_footer_number) for c in value_columns}, index=df.index
     )
-    dropped = int(mask.sum())
+
+    positions = {idx: at for at, idx in enumerate(df.index)}
+    ordered = list(df.index)
+    dropped: set = set()
+    dropped_labels: list[str] = []
+    for idx in candidates.index:  # top-down, so higher-level totals verify
+        label = str(candidates.loc[idx]).strip()
+        if DERIVED_LINE_PATTERN.match(label) or (
+            value_columns and _verifies_as_subtotal(numeric, ordered, positions[idx], idx, dropped)
+        ):
+            dropped.add(idx)
+            dropped_labels.append(label)
     if dropped:
-        df = df[~mask]
+        df = df.drop(index=list(dropped))
         notes.append(
             TransformNote(
                 finding_type="footer_rows_removed",
                 severity="info",
                 message=(
-                    f"Excluded {dropped} summary/total row(s) so they do not "
+                    f"Excluded {len(dropped)} summary/total row(s) so they do not "
                     "double-count the detail rows."
                 ),
-                meta={"count": dropped},
+                meta={"count": len(dropped), "labels": dropped_labels[:12]},
             )
         )
     return df
+
+
+def _verifies_as_subtotal(
+    numeric: pd.DataFrame, ordered: list, at: int, idx, already_dropped: set
+) -> bool:
+    """Scan backward from the candidate accumulating column-wise prefix sums
+    over rows not already dropped (skipping no-number rows like section
+    headers); true iff at some depth EVERY numeric cell of the candidate
+    matches +sum or -sum within tolerance. Excluding already-dropped
+    subtotals is what lets multi-level totals verify (TOTAL REVENUE = sum of
+    the details once the section TOTALs are gone)."""
+    candidate = numeric.loc[idx]
+    known = candidate.notna()
+    if not known.any() or (candidate[known] == 0).all():
+        return False  # nothing to verify against (all-zero rows stay)
+    running = None
+    for position in range(at - 1, -1, -1):
+        row_idx = ordered[position]
+        if row_idx in already_dropped:
+            continue
+        row = numeric.loc[row_idx]
+        if row.isna().all():
+            continue
+        running = row.fillna(0.0) if running is None else running + row.fillna(0.0)
+        for sign in (1.0, -1.0):
+            diff = (candidate[known] - running[known] * sign).abs()
+            tolerance = candidate[known].abs().clip(lower=1.0) * 0.005 + 0.01
+            if (diff <= tolerance).all():
+                return True
+    return False
 
 
 def _trim_strings(df: pd.DataFrame) -> pd.DataFrame:

@@ -869,6 +869,70 @@ def numeric_percent_csv() -> None:
     (OUT / "numeric_percent.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def yardi_12_month_statement() -> None:
+    """Property-management 12-month accrual statement (Yardi/RealPage style):
+    banner block; header row with TWO blank label cells then month columns +
+    Total; account-code + indented-account-name label pair; values stored as
+    STRINGS; multi-level subtotal rows (TOTAL <SECTION>, TOTAL REVENUE, NET
+    OPERATING INCOME, NET INCOME); a blank spacer row between the revenue and
+    expense halves (which must NOT split the statement into two tables); and
+    statistical accounts at the bottom whose names start with 'Total' but are
+    NOT dollar subtotals."""
+    months = [date(2025, m, 1) for m in range(6, 13)] + [date(2026, m, 1) for m in range(1, 6)]
+    month_labels = [m.strftime("%b %Y") for m in months]
+
+    def detail(code, name, base):
+        values = [round(base * (0.8 + random.random() * 0.4), 2) for _ in month_labels]
+        return [code, f"     {name}", *values, round(sum(values), 2)], values
+
+    def subtotal(code, name, rows):
+        sums = [round(sum(r[i] for r in rows), 2) for i in range(len(month_labels))]
+        return [code, f"   {name}", *sums, round(sum(sums), 2)]
+
+    grid: list[list] = [
+        ["The Lodge at Fixture (fx001)"] + [None] * 14,
+        ["Statement (12 months)"] + [None] * 14,
+        ["Period = Jun 2025-May 2026"] + [None] * 14,
+        ["Book = Accrual"] + [None] * 14,
+        [None, None, *month_labels, "Total"],
+        ["4000-0000", " REVENUE"] + [None] * 13,
+    ]
+    revenue_values = []
+    for index, (name, base) in enumerate(
+        [("Market Rent - Independent", 70_000), ("Care Income", 18_000),
+         ("Ancillary Income", 5_000), ("Other Income", 900)]
+    ):
+        row, values = detail(f"40{index}0-0000", name, base)
+        grid.append(row)
+        revenue_values.append(values)
+    grid.append(subtotal("4999-9999", "TOTAL REVENUE", revenue_values))
+    grid.append(["5000-0000", " OPERATING EXPENSES"] + [None] * 13)
+    expense_values = []
+    for index, (name, base) in enumerate(
+        [("Payroll", 40_000), ("Utilities", 8_000), ("Dietary", 12_000), ("Marketing", 3_000)]
+    ):
+        if index == 2:
+            # The Yardi page-break artifact observed in the real export: TWO
+            # blank rows mid-section, between dense data rows. This triggers
+            # the block splitter; the continuation merge must reunite the
+            # halves into one statement.
+            grid.append([None] * 15)
+            grid.append([None] * 15)
+        row, values = detail(f"5{index}00-0000", name, base)
+        grid.append(row)
+        expense_values.append(values)
+    grid.append(subtotal("5999-9999", "TOTAL OPERATING EXPENSES", expense_values))
+    noi = [
+        round(sum(r[i] for r in revenue_values) - sum(r[i] for r in expense_values), 2)
+        for i in range(len(month_labels))
+    ]
+    grid.append(["6890-9999", " NET OPERATING INCOME", *noi, round(sum(noi), 2)])
+    census_row, _ = detail("9999-8006", "Total Census", 58)
+    grid.append(census_row)
+    with pd.ExcelWriter(OUT / "yardi_12_month_statement.xlsx", engine="openpyxl") as writer:
+        pd.DataFrame(grid).to_excel(writer, sheet_name="Report1", index=False, header=False)
+
+
 def ar_aging_snapshot() -> None:
     """A single-period AR-aging snapshot (every row shares one 'Period') with
     a 'Prepayments' currency column — a real report that tripped two engine
@@ -939,4 +1003,5 @@ if __name__ == "__main__":
     newline_headers_report()
     numeric_percent_csv()
     ar_aging_snapshot()
+    yardi_12_month_statement()
     print("fixtures written to", OUT)

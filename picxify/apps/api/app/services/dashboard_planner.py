@@ -252,7 +252,10 @@ def _ranked_dimensions(ctx: PlanningContext) -> list[ColumnCtx]:
             if column.semantic_type in priority
             else len(priority)
         )
-        return (-groupability, tier)
+        # At equal groupability, a descriptive column ('Category') beats an
+        # identifier column ('Code') — humans read names, not account codes.
+        idish = bool(set(_slug(column.name).split("_")) & ID_NAME_TOKENS)
+        return (-groupability, idish, tier)
 
     dimensions.sort(key=rank)
     return dimensions
@@ -486,7 +489,15 @@ def _build_chart_widgets(ctx: PlanningContext) -> tuple[list[dict], list[dict]]:
             )
         )
 
-    if dimension and dates and ctx.date_grain:
+    # A stacked composition only reads with a handful of series; a
+    # high-cardinality dimension (hundreds of account names) would truncate
+    # at the query row cap and chart garbage. The top-N horizontal breakdown
+    # below covers those dimensions honestly instead.
+    stackable = dimension is not None and (
+        dimension.unique_ratio is None
+        or dimension.unique_ratio * max(ctx.row_count, 1) <= 30
+    )
+    if dimension and dates and ctx.date_grain and stackable:
         time_widgets.append(
             _chart_widget(
                 "w_chart_mix",
